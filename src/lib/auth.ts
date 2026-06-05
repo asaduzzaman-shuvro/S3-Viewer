@@ -8,13 +8,21 @@ export const AUTH_COOKIE = "s3v_auth";
 // credentials, so a missing/weak value is a real risk — fail loudly instead of
 // silently falling back. Edge-safe: just an env read, no Node crypto.
 // ---------------------------------------------------------------------------
+let warnedWeakSecret = false;
+
 export function getAppSecret(): string {
   const secret = process.env.APP_SECRET;
-  if (!secret || secret.length < 16) {
+  if (!secret) {
     throw new Error(
-      "APP_SECRET must be set to a strong random string (at least 16 characters). " +
-        "It secures the auth cookie and encrypts saved S3 credentials. " +
-        "Generate one with: openssl rand -hex 32"
+      "APP_SECRET must be set. It secures the auth cookie and encrypts saved S3 " +
+        "credentials. Generate one with: openssl rand -hex 32"
+    );
+  }
+  if (secret.length < 16 && !warnedWeakSecret) {
+    warnedWeakSecret = true;
+    console.warn(
+      "[auth] APP_SECRET is short (<16 chars). It secures the auth cookie and " +
+        "encrypts saved S3 credentials — consider a stronger value: openssl rand -hex 32"
     );
   }
   return secret;
