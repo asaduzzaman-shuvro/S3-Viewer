@@ -10,6 +10,7 @@ import {
   createDecipheriv,
   createHash,
   randomBytes,
+  randomUUID,
 } from "crypto";
 
 export const CONNECTION_COOKIE = "s3v_conn";
@@ -122,6 +123,47 @@ export async function readStore(): Promise<ConnectionStore | null> {
   } catch {
     return null;
   }
+}
+
+/** Encrypt and persist the store to the httpOnly cookie. Route handlers only. */
+export async function writeStore(store: ConnectionStore): Promise<void> {
+  const c = await cookies();
+  c.set(CONNECTION_COOKIE, encrypt(JSON.stringify(store)), {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+  });
+}
+
+/** Remove the saved-connection cookie (reverts to env default / unconfigured). */
+export async function clearStore(): Promise<void> {
+  const c = await cookies();
+  c.set(CONNECTION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
+/**
+ * Add a new runtime connection, make it active, and persist. Returns the saved item.
+ * Throws if the saved-connection limit is reached.
+ */
+export async function addConnection(
+  input: Omit<S3Connection, "id">
+): Promise<S3Connection> {
+  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
+  if (store.items.length >= MAX_SAVED_CONNECTIONS) {
+    throw new Error(
+      `You can save at most ${MAX_SAVED_CONNECTIONS} connections. Remove one first.`
+    );
+  }
+  const item: S3Connection = { ...input, id: randomUUID() };
+  store.items.push(item);
+  store.activeId = item.id;
+  await writeStore(store);
+  return item;
 }
 
 /**

@@ -5,6 +5,7 @@ import { listPrefix } from "@/lib/s3";
 import Breadcrumb from "@/components/Breadcrumb";
 import FileRow from "@/components/FileRow";
 import LogoutButton from "@/components/LogoutButton";
+import ConnectionForm from "@/components/ConnectionForm";
 
 interface BrowsePageProps {
   params: Promise<{ path?: string[] }>;
@@ -15,18 +16,20 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   if (!authed) redirect("/login");
 
   const conn = await getActiveConnection();
-  // No connection configured (no env creds, no saved connection). Phase 2 replaces
-  // this with an inline "connect a bucket" form.
+  // No connection configured (no env creds, no saved connection) → show the form.
   if (!conn) {
     return (
-      <div className="browse-shell">
-        <main className="browse-main" style={styles.main}>
-          <div style={styles.empty}>
-            <span style={styles.emptyGlyph}>🔌</span>
-            <p style={styles.emptyText}>No S3 connection configured.</p>
-          </div>
-        </main>
-      </div>
+      <main className="auth-bg">
+        <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
+          <span style={styles.connEyebrow}>● connect</span>
+          <h1 style={styles.connTitle}>Connect an S3 bucket</h1>
+          <p style={styles.connSubtitle}>
+            No bucket is configured. Enter credentials to start browsing — they&apos;re
+            validated and stored encrypted, server-side only.
+          </p>
+          <ConnectionForm submitLabel="Connect & open" />
+        </div>
+      </main>
     );
   }
 
@@ -36,7 +39,31 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   const segments = path.map(decodeURIComponent);
   const prefix = segments.length > 0 ? segments.join("/") + "/" : "";
 
-  const { folders, files } = await listPrefix(conn, prefix);
+  let folders: string[] = [];
+  let files: Awaited<ReturnType<typeof listPrefix>>["files"] = [];
+  let listError = false;
+  try {
+    ({ folders, files } = await listPrefix(conn, prefix));
+  } catch (err) {
+    console.error("[browse] listPrefix failed", err);
+    listError = true;
+  }
+
+  if (listError) {
+    return (
+      <main className="auth-bg">
+        <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
+          <span style={styles.connEyebrow}>● connection error</span>
+          <h1 style={styles.connTitle}>Couldn&apos;t reach “{conn.bucket}”</h1>
+          <p style={styles.connSubtitle}>
+            The active connection couldn&apos;t list this bucket — the credentials may be
+            wrong or expired. Re-enter them to reconnect.
+          </p>
+          <ConnectionForm submitLabel="Reconnect" />
+        </div>
+      </main>
+    );
+  }
 
   // Strip the current prefix to get display names for folders
   const folderItems = folders.map((f) => {
@@ -176,4 +203,27 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyGlyph: { fontSize: 32, opacity: 0.5 },
   emptyText: { margin: 0, fontSize: 14 },
+  connEyebrow: {
+    display: "inline-block",
+    marginBottom: 12,
+    fontFamily: "var(--font-geist-mono), monospace",
+    fontSize: 11,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    color: "var(--accent)",
+  },
+  connTitle: {
+    margin: "0 0 8px",
+    fontFamily: "var(--font-display), system-ui, sans-serif",
+    fontSize: 24,
+    fontWeight: 700,
+    letterSpacing: "-0.02em",
+    color: "var(--foreground)",
+  },
+  connSubtitle: {
+    margin: "0 0 24px",
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: "var(--muted)",
+  },
 };

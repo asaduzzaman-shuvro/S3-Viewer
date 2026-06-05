@@ -1,0 +1,79 @@
+import { NextRequest, NextResponse } from "next/server";
+import { isAuthedRequest } from "@/lib/auth";
+import { addConnection, type S3Connection } from "@/lib/connection";
+import { validateConnection } from "@/lib/s3";
+
+interface ConnectionBody {
+  label?: string;
+  region?: string;
+  bucket?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+}
+
+// Map raw AWS SDK errors to messages a user can act on.
+function friendlyError(err: unknown): string {
+  const name = (err as { name?: string })?.name ?? "";
+  switch (name) {
+    case "InvalidAccessKeyId":
+      return "That access key ID isn't recognized by AWS.";
+    case "SignatureDoesNotMatch":
+      return "The secret access key doesn't match that access key ID.";
+    case "NoSuchBucket":
+      return "No bucket with that name exists in this region.";
+    case "AccessDenied":
+      return "These credentials don't have permission to list that bucket.";
+    case "PermanentRedirect":
+    case "AuthorizationHeaderMalformed":
+      return "Wrong region for this bucket — check the region.";
+    default:
+      return "Couldn't connect with those details. Double-check the values and try again.";
+  }
+}
+
+export async function POST(req: NextRequest) {
+  if (!isAuthedRequest(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await req.json().catch(() => ({}))) as ConnectionBody;
+  const region = body.region?.trim();
+  const bucket = body.bucket?.trim();
+  const accessKeyId = body.accessKeyId?.trim();
+  const secretAccessKey = body.secretAccessKey?.trim();
+  const label = body.label?.trim() || bucket || "";
+
+  if (!region || !bucket || !accessKeyId || !secretAccessKey) {
+    return NextResponse.json(
+      { error: "Region, bucket, access key ID, and secret access key are all required." },
+      { status: 400 }
+    );
+  }
+
+  const candidate: S3Connection = {
+    id: "pending",
+    label,
+    region,
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+  };
+
+  // Validate the credentials with a real (tiny) S3 call before saving.
+  try {
+    await validateConnection(candidate);
+  } catch (err) {
+    return NextResponse.json({ error: friendlyError(err) }, { status: 400 });
+  }
+
+  try {
+    await addConnection({ label, region, bucket, accessKeyId, secretAccessKey });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not save the connection." },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ ok: true });
+}

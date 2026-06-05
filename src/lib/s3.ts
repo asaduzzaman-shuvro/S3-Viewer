@@ -57,6 +57,18 @@ function normalisePrefix(prefix: string): string {
 }
 
 /**
+ * Confirm a connection works by issuing a minimal listing (one object).
+ * Throws the underlying AWS error (e.g. InvalidAccessKeyId, NoSuchBucket) on failure.
+ */
+export async function validateConnection(conn: S3Connection): Promise<void> {
+  const command = new ListObjectsV2Command({
+    Bucket: conn.bucket,
+    MaxKeys: 1,
+  });
+  await clientFor(conn).send(command);
+}
+
+/**
  * List folders and files at a given prefix (one level deep).
  * Pass an empty string (or "/") for the bucket root.
  */
