@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthedRequest } from "@/lib/auth";
-import { addConnection, type S3Connection } from "@/lib/connection";
+import {
+  addConnection,
+  removeConnection,
+  setActiveConnection,
+  type S3Connection,
+} from "@/lib/connection";
 import { validateConnection } from "@/lib/s3";
 
 interface ConnectionBody {
@@ -75,5 +80,45 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  return NextResponse.json({ ok: true });
+}
+
+// Activate an existing connection (env default or a saved one).
+export async function PATCH(req: NextRequest) {
+  if (!isAuthedRequest(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = (await req.json().catch(() => ({}))) as { id?: string };
+  if (!id) {
+    return NextResponse.json({ error: "Missing connection id" }, { status: 400 });
+  }
+  try {
+    await setActiveConnection(id);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not switch connection." },
+      { status: 400 }
+    );
+  }
+  return NextResponse.json({ ok: true });
+}
+
+// Remove a saved connection (the env default cannot be removed).
+export async function DELETE(req: NextRequest) {
+  if (!isAuthedRequest(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "Missing connection id" }, { status: 400 });
+  }
+  try {
+    await removeConnection(id);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not remove connection." },
+      { status: 400 }
+    );
+  }
   return NextResponse.json({ ok: true });
 }

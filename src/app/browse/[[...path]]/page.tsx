@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
-import { getActiveConnection } from "@/lib/connection";
+import { getActiveConnection, listConnections } from "@/lib/connection";
 import { listPrefix } from "@/lib/s3";
 import Breadcrumb from "@/components/Breadcrumb";
 import FileRow from "@/components/FileRow";
 import LogoutButton from "@/components/LogoutButton";
 import ConnectionForm from "@/components/ConnectionForm";
+import BucketSwitcher from "@/components/BucketSwitcher";
 
 interface BrowsePageProps {
   params: Promise<{ path?: string[] }>;
@@ -79,6 +80,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
 
   const isEmpty = folderItems.length === 0 && fileItems.length === 0;
   const here = segments.length > 0 ? segments[segments.length - 1] : "root";
+  const connections = await listConnections();
 
   return (
     <div className="browse-shell">
@@ -86,7 +88,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
         {/* Header */}
         <header style={styles.header}>
           <div className="browse-enter" style={{ "--d": "40ms" } as React.CSSProperties}>
-            <span style={styles.eyebrow}>● bucket</span>
+            <span style={styles.eyebrow}>● {conn.bucket}</span>
             <h1 style={styles.title}>{here}</h1>
             <p style={styles.count}>
               {folderItems.length} {folderItems.length === 1 ? "folder" : "folders"}
@@ -94,7 +96,10 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
               {fileItems.length} {fileItems.length === 1 ? "file" : "files"}
             </p>
           </div>
-          <LogoutButton />
+          <div style={styles.headerActions} className="browse-enter">
+            <BucketSwitcher connections={connections} />
+            <LogoutButton />
+          </div>
         </header>
 
         <div className="browse-enter" style={{ "--d": "90ms" } as React.CSSProperties}>
@@ -155,7 +160,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 12,
     marginBottom: 24,
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flex: "none",
   },
   eyebrow: {
     display: "inline-block",

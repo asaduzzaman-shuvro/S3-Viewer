@@ -35,6 +35,16 @@ export interface ConnectionStore {
   items: S3Connection[];
 }
 
+/** A connection safe to send to the client — never includes the secret key. */
+export interface SanitizedConnection {
+  id: string;
+  label: string;
+  bucket: string;
+  region: string;
+  isEnv: boolean;
+  isActive: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Env-provided default connection
 // ---------------------------------------------------------------------------
@@ -166,6 +176,20 @@ export async function addConnection(
   return item;
 }
 
+/** The id that actually resolves as active (mirrors getActiveConnection's precedence). */
+async function effectiveActiveId(): Promise<string | null> {
+  const store = await readStore();
+  if (store) {
+    if (store.activeId === ENV_CONNECTION_ID && envConnection()) {
+      return ENV_CONNECTION_ID;
+    }
+    if (store.items.some((c) => c.id === store.activeId)) {
+      return store.activeId;
+    }
+  }
+  return envConnection() ? ENV_CONNECTION_ID : null;
+}
+
 /**
  * Resolve the active connection. Precedence: the store's active item (if the cookie
  * exists and points at a valid runtime item), else the env default, else null.
@@ -182,4 +206,56 @@ export async function getActiveConnection(): Promise<S3Connection | null> {
   }
 
   return envConnection();
+}
+
+function sanitize(conn: S3Connection, isActive: boolean): SanitizedConnection {
+  return {
+    id: conn.id,
+    label: conn.label,
+    bucket: conn.bucket,
+    region: conn.region,
+    isEnv: conn.id === ENV_CONNECTION_ID,
+    isActive,
+  };
+}
+
+/** Sanitized list for the client: env default (if any) first, then saved items. */
+export async function listConnections(): Promise<SanitizedConnection[]> {
+  const store = await readStore();
+  const env = envConnection();
+  const activeId = await effectiveActiveId();
+
+  const out: SanitizedConnection[] = [];
+  if (env) out.push(sanitize(env, env.id === activeId));
+  if (store) {
+    for (const item of store.items) out.push(sanitize(item, item.id === activeId));
+  }
+  return out;
+}
+
+/** Make an existing connection (env or saved) the active one. */
+export async function setActiveConnection(id: string): Promise<void> {
+  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
+  const exists =
+    id === ENV_CONNECTION_ID ? !!envConnection() : store.items.some((c) => c.id === id);
+  if (!exists) throw new Error("Unknown connection.");
+  store.activeId = id;
+  await writeStore(store);
+}
+
+/** Remove a saved connection (never the env default); re-point active if needed. */
+export async function removeConnection(id: string): Promise<void> {
+  if (id === ENV_CONNECTION_ID) {
+    throw new Error("The default connection can't be removed.");
+  }
+  const store = await readStore();
+  if (!store) return;
+
+  store.items = store.items.filter((c) => c.id !== id);
+  if (store.activeId === id) {
+    store.activeId = envConnection()
+      ? ENV_CONNECTION_ID
+      : store.items[0]?.id ?? ENV_CONNECTION_ID;
+  }
+  await writeStore(store);
 }

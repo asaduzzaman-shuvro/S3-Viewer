@@ -296,3 +296,24 @@ a {
     animation-delay: var(--d, 0ms);
   }
 }
+
+/* Bucket switcher */
+.switch-btn {
+  transition: border-color var(--transition), background var(--transition);
+}
+.switch-btn:hover {
+  border-color: var(--accent);
+}
+.switch-row {
+  transition: background var(--transition);
+}
+.switch-row:hover {
+  background: var(--accent-soft);
+}
+.switch-remove {
+  transition: color var(--transition), background var(--transition);
+}
+.switch-remove:hover {
+  color: var(--danger);
+  background: var(--danger-surface);
+}
