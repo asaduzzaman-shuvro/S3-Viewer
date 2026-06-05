@@ -1,0 +1,26 @@
+{
+  "skill_name": "documentation",
+  "evals": [
+    {
+      "id": 0,
+      "name": "readme",
+      "prompt": "Write a README for this S3 Storage Viewer project.",
+      "expected_output": "A README.md grounded in the real code: accurate description, real npm scripts, the actual env vars from CLAUDE.md/.env.example, real project structure. Tech stack mentions Next.js 16, React 19, AWS SDK.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "api-reference",
+      "prompt": "Generate API reference docs for the src/lib/s3.ts module.",
+      "expected_output": "Reference markdown documenting each public export of s3.ts (listPrefix, presignGet, contentTypeFromKey, etc.) with real signatures, params, return types, and runnable examples. AWS SDK types/usage should be verified via Context7.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "architecture",
+      "prompt": "Document the architecture — how does a browse request flow from the URL through middleware to S3 and back?",
+      "expected_output": "An architecture/data-flow doc tracing a browse request: middleware auth redirect, the browse catch-all route, listPrefix call to S3, render. Names real files and components, explains the auth model and runtime split.",
+      "files": []
+    }
+  ]
+}
