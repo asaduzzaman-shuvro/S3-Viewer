@@ -42,6 +42,7 @@ export interface SanitizedConnection {
   label: string;
   bucket: string;
   region: string;
+  accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
 }
@@ -214,6 +215,7 @@ function sanitize(conn: S3Connection, isActive: boolean): SanitizedConnection {
     label: conn.label,
     bucket: conn.bucket,
     region: conn.region,
+    accessKeyId: conn.accessKeyId,
     isEnv: conn.id === ENV_CONNECTION_ID,
     isActive,
   };
@@ -240,6 +242,29 @@ export async function setActiveConnection(id: string): Promise<void> {
     id === ENV_CONNECTION_ID ? !!envConnection() : store.items.some((c) => c.id === id);
   if (!exists) throw new Error("Unknown connection.");
   store.activeId = id;
+  await writeStore(store);
+}
+
+/** Raw saved connection (incl. secret) for server-side use. Null for env/unknown. */
+export async function getStoredConnection(id: string): Promise<S3Connection | null> {
+  if (id === ENV_CONNECTION_ID) return null;
+  const store = await readStore();
+  return store?.items.find((c) => c.id === id) ?? null;
+}
+
+/** Update a saved connection's fields (never the env default); active stays put. */
+export async function updateConnection(
+  id: string,
+  fields: Partial<Omit<S3Connection, "id">>
+): Promise<void> {
+  if (id === ENV_CONNECTION_ID) {
+    throw new Error("The default connection can't be edited.");
+  }
+  const store = await readStore();
+  const item = store?.items.find((c) => c.id === id);
+  if (!store || !item) throw new Error("Unknown connection.");
+
+  Object.assign(item, fields);
   await writeStore(store);
 }
 

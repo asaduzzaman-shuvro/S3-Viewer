@@ -9,6 +9,7 @@ export interface SwitcherConnection {
   label: string;
   bucket: string;
   region: string;
+  accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
 }
@@ -21,6 +22,7 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<SwitcherConnection | null>(null);
   const [busy, setBusy] = useState(false);
 
   const active = connections.find((c) => c.isActive);
@@ -94,24 +96,64 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
                     </span>
                   </button>
                   {!c.isEnv && (
-                    <button
-                      type="button"
-                      className="switch-remove"
-                      style={styles.remove}
-                      onClick={() => remove(c.id)}
-                      disabled={busy}
-                      aria-label={`Remove ${c.label}`}
-                      title="Remove"
-                    >
-                      ✕
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="switch-remove"
+                        style={styles.remove}
+                        onClick={() => {
+                          setEditing(c);
+                          setAdding(false);
+                        }}
+                        disabled={busy}
+                        aria-label={`Edit ${c.label}`}
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="switch-remove"
+                        style={styles.remove}
+                        onClick={() => remove(c.id)}
+                        disabled={busy}
+                        aria-label={`Remove ${c.label}`}
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
             </div>
 
             <div style={styles.footer}>
-              {adding ? (
+              {editing ? (
+                <>
+                  <div style={styles.editHeader}>
+                    <span style={styles.editTitle}>Editing “{editing.label}”</span>
+                    <button type="button" style={styles.cancel} onClick={() => setEditing(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                  <ConnectionForm
+                    connection={{
+                      id: editing.id,
+                      label: editing.label,
+                      region: editing.region,
+                      bucket: editing.bucket,
+                      accessKeyId: editing.accessKeyId,
+                    }}
+                    submitLabel="Save changes"
+                    onSuccess={() => {
+                      setEditing(null);
+                      setOpen(false);
+                      router.refresh();
+                    }}
+                  />
+                </>
+              ) : adding ? (
                 <ConnectionForm
                   submitLabel="Add & switch"
                   onSuccess={() => {
@@ -232,6 +274,30 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   footer: { marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" },
+  editHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    margin: "2px 4px 10px",
+  },
+  editTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--muted)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  cancel: {
+    flex: "none",
+    padding: "4px 8px",
+    fontSize: 12,
+    color: "var(--muted)",
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: 7,
+    cursor: "pointer",
+  },
   addBtn: {
     width: "100%",
     padding: "9px 0",

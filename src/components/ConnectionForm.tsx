@@ -3,25 +3,52 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+/** Existing connection being edited (never includes the secret key). */
+export interface EditableConnection {
+  id: string;
+  label: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+}
+
 interface ConnectionFormProps {
   /** Called after a successful save. Defaults to refreshing the route. */
   onSuccess?: () => void;
   submitLabel?: string;
+  /** When provided, the form edits this connection instead of adding a new one. */
+  connection?: EditableConnection;
 }
 
-const FIELDS = [
-  { name: "label", label: "Label (optional)", placeholder: "e.g. Staging assets", type: "text", required: false },
-  { name: "region", label: "Region", placeholder: "us-east-1", type: "text", required: true },
-  { name: "bucket", label: "Bucket", placeholder: "my-bucket", type: "text", required: true },
-  { name: "accessKeyId", label: "Access key ID", placeholder: "AKIA…", type: "text", required: true },
-  { name: "secretAccessKey", label: "Secret access key", placeholder: "••••••••••••", type: "password", required: true },
-] as const;
-
-export default function ConnectionForm({ onSuccess, submitLabel = "Connect" }: ConnectionFormProps) {
+export default function ConnectionForm({ onSuccess, submitLabel, connection }: ConnectionFormProps) {
   const router = useRouter();
-  const [values, setValues] = useState<Record<string, string>>({});
+  const isEdit = !!connection;
+  const [values, setValues] = useState<Record<string, string>>((): Record<string, string> => {
+    if (!connection) return {};
+    return {
+      label: connection.label,
+      region: connection.region,
+      bucket: connection.bucket,
+      accessKeyId: connection.accessKeyId,
+    };
+  });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // In edit mode the secret is optional (blank keeps the current one).
+  const fields = [
+    { name: "label", label: "Label (optional)", placeholder: "e.g. Staging assets", type: "text", required: false },
+    { name: "region", label: "Region", placeholder: "us-east-1", type: "text", required: true },
+    { name: "bucket", label: "Bucket", placeholder: "my-bucket", type: "text", required: true },
+    { name: "accessKeyId", label: "Access key ID", placeholder: "AKIA…", type: "text", required: true },
+    {
+      name: "secretAccessKey",
+      label: isEdit ? "Secret access key (leave blank to keep)" : "Secret access key",
+      placeholder: isEdit ? "Leave blank to keep current" : "••••••••••••",
+      type: "password",
+      required: !isEdit,
+    },
+  ];
 
   function update(name: string, value: string) {
     setValues((v) => ({ ...v, [name]: value }));
@@ -34,9 +61,9 @@ export default function ConnectionForm({ onSuccess, submitLabel = "Connect" }: C
     setLoading(true);
 
     const res = await fetch("/api/connection", {
-      method: "POST",
+      method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
+      body: JSON.stringify(isEdit ? { ...values, id: connection!.id } : values),
     });
 
     if (res.ok) {
@@ -50,9 +77,11 @@ export default function ConnectionForm({ onSuccess, submitLabel = "Connect" }: C
     }
   }
 
+  const buttonLabel = submitLabel ?? (isEdit ? "Save changes" : "Connect");
+
   return (
     <form onSubmit={handleSubmit} style={styles.form}>
-      {FIELDS.map((f) => (
+      {fields.map((f) => (
         <label key={f.name} style={styles.field}>
           <span style={styles.label}>{f.label}</span>
           <input
@@ -73,7 +102,7 @@ export default function ConnectionForm({ onSuccess, submitLabel = "Connect" }: C
 
       <button type="submit" disabled={loading} aria-busy={loading} className="auth-button" style={styles.button}>
         {loading && <span className="spinner" aria-hidden="true" />}
-        {loading ? "Validating…" : submitLabel}
+        {loading ? "Validating…" : buttonLabel}
       </button>
     </form>
   );

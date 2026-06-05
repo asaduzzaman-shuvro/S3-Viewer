@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthedRequest } from "@/lib/auth";
 import {
   addConnection,
+  getStoredConnection,
   removeConnection,
   setActiveConnection,
+  updateConnection,
   type S3Connection,
 } from "@/lib/connection";
 import { validateConnection } from "@/lib/s3";
@@ -73,6 +75,69 @@ export async function POST(req: NextRequest) {
 
   try {
     await addConnection({ label, region, bucket, accessKeyId, secretAccessKey });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not save the connection." },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+// Edit a saved connection. Omitted/blank secret or access key keep the current value.
+export async function PUT(req: NextRequest) {
+  if (!isAuthedRequest(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await req.json().catch(() => ({}))) as ConnectionBody & { id?: string };
+  const id = body.id?.trim();
+  if (!id) {
+    return NextResponse.json({ error: "Missing connection id" }, { status: 400 });
+  }
+
+  const existing = await getStoredConnection(id);
+  if (!existing) {
+    return NextResponse.json(
+      { error: "That connection can't be edited." },
+      { status: 400 }
+    );
+  }
+
+  // Merge: each field falls back to the stored value when omitted/blank.
+  const merged: S3Connection = {
+    ...existing,
+    label: body.label?.trim() || existing.label,
+    region: body.region?.trim() || existing.region,
+    bucket: body.bucket?.trim() || existing.bucket,
+    accessKeyId: body.accessKeyId?.trim() || existing.accessKeyId,
+    secretAccessKey: body.secretAccessKey?.trim() || existing.secretAccessKey,
+  };
+
+  // Re-validate only if a connection-affecting field actually changed.
+  const credsChanged =
+    merged.region !== existing.region ||
+    merged.bucket !== existing.bucket ||
+    merged.accessKeyId !== existing.accessKeyId ||
+    merged.secretAccessKey !== existing.secretAccessKey;
+
+  if (credsChanged) {
+    try {
+      await validateConnection(merged);
+    } catch (err) {
+      return NextResponse.json({ error: friendlyError(err) }, { status: 400 });
+    }
+  }
+
+  try {
+    await updateConnection(id, {
+      label: merged.label,
+      region: merged.region,
+      bucket: merged.bucket,
+      accessKeyId: merged.accessKeyId,
+      secretAccessKey: merged.secretAccessKey,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Could not save the connection." },
