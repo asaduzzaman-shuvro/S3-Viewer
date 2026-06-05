@@ -12,7 +12,7 @@ import {
   randomBytes,
   randomUUID,
 } from "crypto";
-import { getAppSecret } from "./auth";
+import { getAppSecret, COOKIE_SECURE } from "./auth";
 
 export const CONNECTION_COOKIE = "s3v_conn";
 
@@ -148,6 +148,7 @@ export async function writeStore(store: ConnectionStore): Promise<void> {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
+    secure: COOKIE_SECURE,
   });
 }
 
@@ -158,6 +159,7 @@ export async function clearStore(): Promise<void> {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
+    secure: COOKIE_SECURE,
     maxAge: 0,
   });
 }

@@ -39,7 +39,7 @@ function friendlyError(err: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
 // Edit a saved connection. Omitted/blank secret or access key keep the current value.
 export async function PUT(req: NextRequest) {
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -150,7 +150,7 @@ export async function PUT(req: NextRequest) {
 
 // Activate an existing connection (env default or a saved one).
 export async function PATCH(req: NextRequest) {
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = (await req.json().catch(() => ({}))) as { id?: string };
@@ -170,7 +170,7 @@ export async function PATCH(req: NextRequest) {
 
 // Remove a saved connection (the env default cannot be removed).
 export async function DELETE(req: NextRequest) {
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const id = req.nextUrl.searchParams.get("id");

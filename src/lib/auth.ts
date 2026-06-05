@@ -3,6 +3,13 @@ import { NextRequest } from "next/server";
 
 export const AUTH_COOKIE = "s3v_auth";
 
+// Mark cookies Secure (HTTPS-only) in every environment so the auth token and the
+// encrypted-credential cookie are never sent over plain HTTP. Browsers treat
+// http://localhost as a secure context, so local dev still works (note: Safari is
+// stricter, and accessing the dev server over a LAN IP rather than localhost will
+// not send these cookies).
+export const COOKIE_SECURE = true;
+
 // ---------------------------------------------------------------------------
 // APP_SECRET underpins both the auth cookie and the AES encryption of saved S3
 // credentials, so a missing/weak value is a real risk — fail loudly instead of
@@ -28,18 +35,31 @@ export function getAppSecret(): string {
   return secret;
 }
 
-// The cookie token is APP_SECRET — a long random string set in .env.local.
-export function cookieValue(): string {
-  return getAppSecret();
+// ---------------------------------------------------------------------------
+// The auth cookie holds a ONE-WAY derivation of APP_SECRET, not the secret
+// itself — so a leaked cookie never reveals APP_SECRET (which also encrypts the
+// saved S3 credentials). Uses Web Crypto (`crypto.subtle`), available in both the
+// Edge and Node runtimes, so the same check works in middleware and on the server.
+// ---------------------------------------------------------------------------
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** The value stored in the auth cookie: an opaque token derived from APP_SECRET. */
+export async function authToken(): Promise<string> {
+  return sha256Hex(`${getAppSecret()}:s3v-auth-v1`);
 }
 
 // ---------------------------------------------------------------------------
-// Edge-safe auth check: plain string comparison.
-// Used by middleware (Edge runtime).
+// Edge-safe auth check (works in the Edge middleware and Node routes).
 // ---------------------------------------------------------------------------
-export function isAuthedRequest(req: NextRequest): boolean {
-  const cookie = req.cookies.get(AUTH_COOKIE);
-  return cookie?.value === cookieValue();
+export async function isAuthedRequest(req: NextRequest): Promise<boolean> {
+  const cookie = req.cookies.get(AUTH_COOKIE)?.value;
+  return !!cookie && cookie === (await authToken());
 }
 
 // ---------------------------------------------------------------------------
@@ -47,5 +67,6 @@ export function isAuthedRequest(req: NextRequest): boolean {
 // ---------------------------------------------------------------------------
 export async function isAuthed(): Promise<boolean> {
   const store = await cookies();
-  return store.get(AUTH_COOKIE)?.value === cookieValue();
+  const value = store.get(AUTH_COOKIE)?.value;
+  return !!value && value === (await authToken());
 }

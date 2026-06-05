@@ -4,7 +4,7 @@ import { getActiveConnection } from "@/lib/connection";
 import { presignGet, contentTypeFromKey } from "@/lib/s3";
 
 export async function GET(req: NextRequest) {
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

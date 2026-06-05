@@ -4,7 +4,7 @@ import { isAuthedRequest } from "@/lib/auth";
 // Paths that don't require authentication
 const PUBLIC_PATHS = ["/login", "/api/login"];
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths and Next.js internals
@@ -16,7 +16,7 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!isAuthedRequest(req)) {
+  if (!(await isAuthedRequest(req))) {
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
