@@ -23,31 +23,23 @@ interface ConnectionFormProps {
 export default function ConnectionForm({ onSuccess, submitLabel, connection }: ConnectionFormProps) {
   const router = useRouter();
   const isEdit = !!connection;
+  // Only the label is pre-filled when editing; every other field stays blank and
+  // keeps its stored value unless the user types a replacement.
   const [values, setValues] = useState<Record<string, string>>((): Record<string, string> => {
     if (!connection) return {};
-    return {
-      label: connection.label,
-      region: connection.region,
-      bucket: connection.bucket,
-      accessKeyId: connection.accessKeyId,
-    };
+    return { label: connection.label };
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // In edit mode the secret is optional (blank keeps the current one).
+  // In edit mode every credential field is optional — blank keeps the current value.
+  const keep = "Leave blank to keep current";
   const fields = [
     { name: "label", label: "Label (optional)", placeholder: "e.g. Staging assets", type: "text", required: false },
-    { name: "region", label: "Region", placeholder: "us-east-1", type: "text", required: true },
-    { name: "bucket", label: "Bucket", placeholder: "my-bucket", type: "text", required: true },
-    { name: "accessKeyId", label: "Access key ID", placeholder: "AKIA…", type: "text", required: true },
-    {
-      name: "secretAccessKey",
-      label: isEdit ? "Secret access key (leave blank to keep)" : "Secret access key",
-      placeholder: isEdit ? "Leave blank to keep current" : "••••••••••••",
-      type: "password",
-      required: !isEdit,
-    },
+    { name: "region", label: "Region", placeholder: isEdit ? keep : "us-east-1", type: "text", required: !isEdit },
+    { name: "bucket", label: "Bucket", placeholder: isEdit ? keep : "my-bucket", type: "text", required: !isEdit },
+    { name: "accessKeyId", label: "Access key ID", placeholder: isEdit ? keep : "AKIA…", type: "text", required: !isEdit },
+    { name: "secretAccessKey", label: "Secret access key", placeholder: isEdit ? keep : "••••••••••••", type: "password", required: !isEdit },
   ];
 
   function update(name: string, value: string) {
