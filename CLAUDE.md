@@ -59,11 +59,11 @@ connection; if absent, users enter bucket credentials at runtime via the in-app 
 
 ## Auth Model
 
-- Password-only auth: `APP_PASSWORD` is checked on login; on success, a cookie (`s3v_auth`) is set to `APP_SECRET`.
-- All routes (except `/login` and `/api/login`) are protected by the middleware in `src/proxy.ts`.
-- Edge middleware uses `isAuthedRequest()` (plain string comparison, no Node.js crypto).
-- Server components use the async `isAuthed()` from `lib/auth.ts`; `lib/auth.server.ts` holds only the Node-only `verifyPassword()`.
-- `getAppSecret()` (in `lib/auth.ts`) throws if `APP_SECRET` is unset or too short — it underpins both the cookie and credential encryption.
+- Password-only auth: `APP_PASSWORD` is checked on login; on success, the `s3v_auth` cookie is set to a one-way token (`authToken()` = `SHA-256(APP_SECRET + ":s3v-auth-v1")`), **not** `APP_SECRET` itself, so a leaked cookie can't reveal the credential-encryption key.
+- All routes (except `/login` and `/api/login`) are protected by the middleware in `src/proxy.ts` (Next.js 16's `proxy.ts` is the middleware file — it shows as `ƒ Proxy (Middleware)` in the build).
+- The auth check (`isAuthedRequest`, used in middleware and API routes; `isAuthed`, used in server components) is **async** and compares the cookie against `authToken()`, hashed via **Web Crypto** (`crypto.subtle`) so the same code runs in Edge and Node. `lib/auth.server.ts` holds only the Node-only `verifyPassword()`.
+- Cookies are set `Secure` in all environments (`COOKIE_SECURE` in `lib/auth.ts`); `httpOnly` + `sameSite=lax`.
+- `getAppSecret()` (in `lib/auth.ts`) throws if `APP_SECRET` is unset — it underpins both the auth token and credential encryption (warns if shorter than 16 chars).
 
 ## S3 Connections
 

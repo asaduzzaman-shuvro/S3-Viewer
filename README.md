@@ -55,7 +55,7 @@ cp .env.example .env.local
 | `AWS_REGION`            | Region of the bucket, e.g. `us-east-1` |
 | `S3_BUCKET`             | Name of the bucket to browse |
 | `APP_PASSWORD`          | The password users type at `/login` |
-| `APP_SECRET`            | Long random string stored in the auth cookie on success |
+| `APP_SECRET`            | Long random string; signs the auth cookie token and encrypts saved S3 credentials |
 
 A good `APP_SECRET` is any long random string, e.g. `openssl rand -hex 32`.
 These values are read server-side only and are never sent to the browser.
@@ -84,10 +84,12 @@ All scripts are defined in `package.json`:
 
 - **Auth.** `POST /api/login` checks the submitted password against `APP_PASSWORD`
   with a constant-time comparison (`timingSafeEqual`, see `src/lib/auth.server.ts`)
-  and, on success, sets the `s3v_auth` cookie to `APP_SECRET`. Every subsequent
-  request is checked by the Edge middleware in `src/proxy.ts`, which redirects
-  unauthenticated visitors to `/login`. The four API routes also re-check the
-  cookie and return `401` if it's missing or wrong.
+  and, on success, sets the `s3v_auth` cookie to a one-way token derived from
+  `APP_SECRET` (`SHA-256(APP_SECRET + ":s3v-auth-v1")`) — not the secret itself, so a
+  leaked cookie can't reveal the credential-encryption key. Every subsequent request is
+  checked by the Edge middleware in `src/proxy.ts`, which redirects unauthenticated
+  visitors to `/login`. The four API routes also re-check the cookie and return `401`
+  if it's missing or wrong.
 - **Listing.** `listPrefix()` in `src/lib/s3.ts` runs a single
   `ListObjectsV2Command` with `Delimiter: "/"`, so `CommonPrefixes` become folders
   and `Contents` become files — a one-level-deep view of the bucket.
@@ -143,8 +145,8 @@ src/
 - This is **single shared-password** auth — there are no user accounts, sessions,
   or rate limiting. It's suitable for gating an internal tool, not for protecting
   highly sensitive data.
-- The auth cookie is `httpOnly` and `sameSite: lax`. The `secure` flag is currently
-  commented out in `src/app/api/login/route.ts` — **enable it before deploying over
-  HTTPS** so the cookie is never sent over plain HTTP.
+- The auth and credential cookies are `httpOnly`, `sameSite: lax`, and `Secure` in all
+  environments (`COOKIE_SECURE` in `src/lib/auth.ts`), so they're never sent over plain
+  HTTP. Note: serve over HTTPS (or `http://localhost`) or the cookies won't be set.
 - `listPrefix()` issues a single `ListObjectsV2Command` with no pagination, so a
   prefix with more than 1,000 immediate children will be truncated.

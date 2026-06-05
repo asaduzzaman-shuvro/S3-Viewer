@@ -16,8 +16,8 @@ in S3 lives in two environment-derived secrets (`APP_PASSWORD` for login,
 
 | Component | Lives in | Responsibility |
 |-----------|----------|----------------|
-| **Edge middleware** | `src/proxy.ts` | Gate every request; redirect unauthenticated visitors to `/login`. Edge-safe (no Node crypto). |
-| **Edge-safe auth** | `src/lib/auth.ts` | `isAuthedRequest(req)` and `isAuthed()` compare the `s3v_auth` cookie to `APP_SECRET`. No Node imports, so usable from both Edge and server components. |
+| **Edge middleware** | `src/proxy.ts` | Gate every request; redirect unauthenticated visitors to `/login`. Next.js 16's `proxy.ts` is the middleware file (shows as `ƒ Proxy (Middleware)` in the build); Edge-safe. |
+| **Edge-safe auth** | `src/lib/auth.ts` | Async `isAuthedRequest(req)` / `isAuthed()` compare the `s3v_auth` cookie to `authToken()` — a one-way `SHA-256(APP_SECRET + ":s3v-auth-v1")` hashed via Web Crypto, so it runs in both Edge and Node. No Node-`crypto` import. |
 | **Node-only auth** | `src/lib/auth.server.ts` | `verifyPassword()` — constant-time `timingSafeEqual` check, used only by the login route. |
 | **S3 access layer** | `src/lib/s3.ts` | Per-connection `S3Client` (cached by credentials), `listPrefix(conn,…)`, `presignGet(conn,…)`, `validateConnection()`, `contentTypeFromKey()`. The only module that talks to AWS. |
 | **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection`: an AES-256-GCM-encrypted `s3v_conn` cookie (runtime buckets) overrides the env default. Add/activate/remove + sanitized list for the client. |
@@ -38,7 +38,7 @@ Browser
 │    • matcher skips /_next/static, /_next/image, favicon.ico  │
 │    • PUBLIC_PATHS (/login, /api/login) and /_next, /favicon  │
 │      pass straight through                                   │
-│    • isAuthedRequest(req): cookie value === APP_SECRET ?     │
+│    • await isAuthedRequest(req): cookie === authToken() ?    │
 │        no  → 302 redirect to /login                          │
 │        yes → NextResponse.next()                             │
 └─────────────────────────────────────────────────────────────┘
@@ -97,19 +97,20 @@ a time.
   **not** use this endpoint; it calls `listPrefix()` directly server-side. The
   endpoint exists for programmatic/client use.
 - **Login / logout.** `POST /api/login` runs in the Node.js runtime (it needs
-  `crypto.timingSafeEqual`), and on success sets `s3v_auth = APP_SECRET`.
-  `POST /api/logout` clears the cookie with `maxAge: 0`.
+  `crypto.timingSafeEqual`), and on success sets `s3v_auth` to the one-way
+  `authToken()`. `POST /api/logout` clears the auth and connection cookies with `maxAge: 0`.
 
 ## Key decisions
 
 - **Two auth helpers, split by runtime.** Edge middleware can't use Node's `crypto`,
-  so the cookie check (`isAuthedRequest`) is a plain string comparison in
-  `src/lib/auth.ts`, while the password check (`verifyPassword`, constant-time) is
-  isolated in `src/lib/auth.server.ts` and only ever imported by the Node-runtime
-  login route. Mixing them would break the Edge build.
-- **The cookie *is* the secret.** Rather than signing a session, the app stores
-  `APP_SECRET` verbatim in the cookie and compares against it. Simple and stateless,
-  at the cost of having no per-user identity or revocation.
+  so the cookie check (`isAuthedRequest`/`isAuthed`) hashes via **Web Crypto**
+  (`crypto.subtle`, async) in `src/lib/auth.ts` — one code path for Edge and Node —
+  while the password check (`verifyPassword`, constant-time `timingSafeEqual`) is
+  isolated in `src/lib/auth.server.ts` and only imported by the Node-runtime login route.
+- **The cookie holds a derived token, not the secret.** The app stores a one-way
+  `SHA-256(APP_SECRET + ":s3v-auth-v1")` in the cookie and compares against that. Still
+  stateless (no session store, no per-user identity), but a leaked cookie can't be
+  turned back into `APP_SECRET` — which separately encrypts the saved S3 credentials.
 - **S3 as the only backend.** No database, no caching layer. Every listing is a
   live `ListObjectsV2` call; every preview is a fresh presigned URL.
 - **Server-side rendering for browse/preview.** These pages read S3 on the server
@@ -129,14 +130,11 @@ them:
 - **No pagination.** `listPrefix()` sends one `ListObjectsV2Command` and reads a
   single page of results. A prefix with more than ~1,000 immediate children will be
   silently truncated; handling `IsTruncated`/`ContinuationToken` would be needed.
-- **`CLAUDE.md` is slightly out of date.** It states that server components use
-  `isAuthed()` from `lib/auth.server.ts`. In the actual code, both `isAuthedRequest`
-  and the async `isAuthed` live in `src/lib/auth.ts`; `auth.server.ts` contains only
-  `verifyPassword`. The browse page imports `isAuthed` from `@/lib/auth`.
-- **Middleware file naming.** The middleware lives in `src/proxy.ts` exporting a
-  `proxy` function, rather than Next.js's conventional `middleware.ts` /
-  `export function middleware`. If the redirect ever appears not to run, this
-  naming is the first thing to check against your Next.js version's middleware
-  resolution.
-- **Cookie `secure` flag is disabled.** Commented out in the login route — fine for
-  local dev, must be enabled before serving over HTTPS.
+- **Middleware naming (`proxy.ts`).** The middleware is `src/proxy.ts` exporting a
+  `proxy` function — this is the Next.js 16 convention (16 renamed `middleware` →
+  `proxy`), and the build confirms it's active (`ƒ Proxy (Middleware)`). It is *not*
+  inactive dead code. Page/route-level `isAuthed`/`isAuthedRequest` checks back it up
+  as defense-in-depth.
+- **Single shared password.** No per-user identity, sessions, or rate limiting — the
+  auth cookie is a single derived token shared by everyone who knows `APP_PASSWORD`.
+  Suitable for gating an internal tool, not for protecting highly sensitive data.
