@@ -19,10 +19,11 @@ in S3 lives in two environment-derived secrets (`APP_PASSWORD` for login,
 | **Edge middleware** | `src/proxy.ts` | Gate every request; redirect unauthenticated visitors to `/login`. Edge-safe (no Node crypto). |
 | **Edge-safe auth** | `src/lib/auth.ts` | `isAuthedRequest(req)` and `isAuthed()` compare the `s3v_auth` cookie to `APP_SECRET`. No Node imports, so usable from both Edge and server components. |
 | **Node-only auth** | `src/lib/auth.server.ts` | `verifyPassword()` — constant-time `timingSafeEqual` check, used only by the login route. |
-| **S3 access layer** | `src/lib/s3.ts` | The singleton `S3Client`, `listPrefix()`, `presignGet()`, `contentTypeFromKey()`. The only module that talks to AWS. |
-| **API routes** | `src/app/api/*` | `login`, `logout`, `list`, `signed-url` — JSON endpoints, each re-checking auth. |
-| **Pages** | `src/app/{login,browse,preview}` | Server components that render the UI. `browse` and `preview` read S3 directly server-side. |
-| **UI components** | `src/components/*` | `Breadcrumb`, `FileRow`, `ImagePreview`, `PdfPreview`, `JsonPreview`, `LogoutButton`. |
+| **S3 access layer** | `src/lib/s3.ts` | Per-connection `S3Client` (cached by credentials), `listPrefix(conn,…)`, `presignGet(conn,…)`, `validateConnection()`, `contentTypeFromKey()`. The only module that talks to AWS. |
+| **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection`: an AES-256-GCM-encrypted `s3v_conn` cookie (runtime buckets) overrides the env default. Add/activate/remove + sanitized list for the client. |
+| **API routes** | `src/app/api/*` | `login`, `logout`, `list`, `signed-url`, `connection` — JSON endpoints, each re-checking auth. |
+| **Pages** | `src/app/{login,browse,preview}` | Server components that render the UI. `browse` and `preview` read S3 directly server-side. `browse` shows a connection form when none is configured. |
+| **UI components** | `src/components/*` | `Breadcrumb`, `FileRow`, `ImagePreview`, `PdfPreview`, `JsonPreview`, `LogoutButton`, `ConnectionForm`, `BucketSwitcher`. |
 
 ## Data flow: a browse request
 

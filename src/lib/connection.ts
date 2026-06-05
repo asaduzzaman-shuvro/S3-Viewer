@@ -12,6 +12,7 @@ import {
   randomBytes,
   randomUUID,
 } from "crypto";
+import { getAppSecret } from "./auth";
 
 export const CONNECTION_COOKIE = "s3v_conn";
 
@@ -78,9 +79,8 @@ export function hasEnvConnection(): boolean {
 // ---------------------------------------------------------------------------
 
 function encryptionKey(): Buffer {
-  const secret = process.env.APP_SECRET ?? "fallback-secret";
   // sha256 yields a stable 32-byte key regardless of secret length.
-  return createHash("sha256").update(secret).digest();
+  return createHash("sha256").update(getAppSecret()).digest();
 }
 
 export function encrypt(plaintext: string): string {

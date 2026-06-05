@@ -4,11 +4,25 @@ import { NextRequest } from "next/server";
 export const AUTH_COOKIE = "s3v_auth";
 
 // ---------------------------------------------------------------------------
-// The cookie token is APP_SECRET — a long random string set in .env.local.
-// Edge-safe: no Node.js crypto import at module level.
+// APP_SECRET underpins both the auth cookie and the AES encryption of saved S3
+// credentials, so a missing/weak value is a real risk — fail loudly instead of
+// silently falling back. Edge-safe: just an env read, no Node crypto.
 // ---------------------------------------------------------------------------
+export function getAppSecret(): string {
+  const secret = process.env.APP_SECRET;
+  if (!secret || secret.length < 16) {
+    throw new Error(
+      "APP_SECRET must be set to a strong random string (at least 16 characters). " +
+        "It secures the auth cookie and encrypts saved S3 credentials. " +
+        "Generate one with: openssl rand -hex 32"
+    );
+  }
+  return secret;
+}
+
+// The cookie token is APP_SECRET — a long random string set in .env.local.
 export function cookieValue(): string {
-  return process.env.APP_SECRET ?? "fallback-secret";
+  return getAppSecret();
 }
 
 // ---------------------------------------------------------------------------

@@ -17,8 +17,9 @@ src/
     api/
       list/route.ts       — GET /api/list?prefix= — lists folders & files at a prefix
       login/route.ts      — POST /api/login — validates APP_PASSWORD, sets auth cookie
-      logout/route.ts     — POST /api/logout — clears auth cookie
+      logout/route.ts     — POST /api/logout — clears auth + connection cookies
       signed-url/route.ts — GET /api/signed-url?key= — returns a presigned S3 URL
+      connection/route.ts — POST/PATCH/DELETE — add/activate/remove a runtime S3 connection
     browse/[[...path]]/   — Server component: folder browser (catch-all route)
     login/                — Login page
     preview/[...key]/     — File preview page (images, PDF, JSON, etc.)
@@ -29,32 +30,51 @@ src/
     JsonPreview.tsx       — JSON viewer (uses react-json-view-lite)
     LogoutButton.tsx      — Client component logout button
     PdfPreview.tsx        — Inline PDF viewer
+    ConnectionForm.tsx    — Client form to enter/validate S3 bucket credentials
+    BucketSwitcher.tsx    — Top-right control to switch/add/remove S3 connections
   lib/
-    s3.ts                 — S3 client, listPrefix(), presignGet(), contentTypeFromKey()
-    auth.ts               — Cookie-based auth helpers (Edge-safe)
-    auth.server.ts        — Server-component auth helpers
+    s3.ts                 — Per-connection S3 client; listPrefix(), presignGet(), validateConnection(), contentTypeFromKey()
+    connection.ts         — Resolves the active S3 connection (env default or encrypted-cookie store)
+    auth.ts               — Cookie-based auth helpers (Edge-safe); isAuthed(), isAuthedRequest(), getAppSecret()
+    auth.server.ts        — Node-only verifyPassword() (constant-time)
   proxy.ts                — Middleware: redirects unauthenticated requests to /login
 ```
 
 ## Environment Variables
 
-Copy `.env.example` to `.env.local` and fill in all values:
+Copy `.env.example` to `.env.local`:
 
 ```
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=
-S3_BUCKET=
-APP_PASSWORD=   # password users enter at /login
-APP_SECRET=     # long random string stored in the auth cookie
+APP_PASSWORD=   # REQUIRED — password users enter at /login
+APP_SECRET=     # REQUIRED — strong random string (>=16 chars; `openssl rand -hex 32`)
+                #            secures the auth cookie AND encrypts saved S3 credentials
+AWS_ACCESS_KEY_ID=      # OPTIONAL — default S3 connection (see below)
+AWS_SECRET_ACCESS_KEY=  # OPTIONAL
+AWS_REGION=             # OPTIONAL
+S3_BUCKET=              # OPTIONAL
 ```
+
+The four AWS vars are now **optional**. If all are present they form the default
+connection; if absent, users enter bucket credentials at runtime via the in-app form.
 
 ## Auth Model
 
-- Password-only auth: `APP_PASSWORD` is checked on login; on success, a cookie is set to `APP_SECRET`.
+- Password-only auth: `APP_PASSWORD` is checked on login; on success, a cookie (`s3v_auth`) is set to `APP_SECRET`.
 - All routes (except `/login` and `/api/login`) are protected by the middleware in `src/proxy.ts`.
 - Edge middleware uses `isAuthedRequest()` (plain string comparison, no Node.js crypto).
-- Server components use `isAuthed()` from `lib/auth.server.ts` (Next.js async cookie store).
+- Server components use the async `isAuthed()` from `lib/auth.ts`; `lib/auth.server.ts` holds only the Node-only `verifyPassword()`.
+- `getAppSecret()` (in `lib/auth.ts`) throws if `APP_SECRET` is unset or too short — it underpins both the cookie and credential encryption.
+
+## S3 Connections
+
+- The **active connection** (bucket + credentials) is resolved by `lib/connection.ts`:
+  a runtime connection from the encrypted `s3v_conn` cookie takes precedence, otherwise
+  the env default, otherwise none (the browse page shows a connection form).
+- Runtime connections are validated with a real `ListObjectsV2` call before saving,
+  stored AES-256-GCM-encrypted (keyed off `APP_SECRET`) in an httpOnly cookie, and never
+  exposed to client JS (the switcher receives a sanitized list with no secret keys).
+- **Security**: credentials entered at runtime are entrusted to the app — prefer
+  **read-only / least-privilege IAM keys** (or temporary STS credentials).
 
 ## Common Commands
 
@@ -67,7 +87,7 @@ npm run lint    # Run ESLint
 
 ## Key Patterns
 
-- **S3 listing**: `listPrefix(prefix)` uses `ListObjectsV2Command` with `Delimiter: "/"` for one-level-deep listing. Returns `{ folders: string[], files: S3File[] }`.
-- **Presigned URLs**: `presignGet(key, expiresIn=300)` generates a 5-minute presigned GET URL. Content-Type and Content-Disposition are set so browsers render files inline.
+- **S3 listing**: `listPrefix(conn, prefix)` uses `ListObjectsV2Command` with `Delimiter: "/"` for one-level-deep listing. Returns `{ folders: string[], files: S3File[] }`. Takes the active `S3Connection`.
+- **Presigned URLs**: `presignGet(conn, key, expiresIn=300)` generates a 5-minute presigned GET URL. Content-Type and Content-Disposition are set so browsers render files inline.
 - **File routing**: Browse page at `/browse/[...path]`, preview at `/preview/[...key]`. Path segments are URL-encoded/decoded to handle spaces and special characters.
 - **Inline styles**: UI uses inline `React.CSSProperties` style objects — no CSS modules or Tailwind.
