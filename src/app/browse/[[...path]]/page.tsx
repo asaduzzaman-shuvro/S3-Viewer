@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
+import { getActiveConnection } from "@/lib/connection";
 import { listPrefix } from "@/lib/s3";
 import Breadcrumb from "@/components/Breadcrumb";
 import FileRow from "@/components/FileRow";
@@ -13,13 +14,29 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   const authed = await isAuthed();
   if (!authed) redirect("/login");
 
+  const conn = await getActiveConnection();
+  // No connection configured (no env creds, no saved connection). Phase 2 replaces
+  // this with an inline "connect a bucket" form.
+  if (!conn) {
+    return (
+      <div className="browse-shell">
+        <main className="browse-main" style={styles.main}>
+          <div style={styles.empty}>
+            <span style={styles.emptyGlyph}>🔌</span>
+            <p style={styles.emptyText}>No S3 connection configured.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const { path = [] } = await params;
 
   // Decode each segment (handles spaces, special chars in folder names)
   const segments = path.map(decodeURIComponent);
   const prefix = segments.length > 0 ? segments.join("/") + "/" : "";
 
-  const { folders, files } = await listPrefix(prefix);
+  const { folders, files } = await listPrefix(conn, prefix);
 
   // Strip the current prefix to get display names for folders
   const folderItems = folders.map((f) => {

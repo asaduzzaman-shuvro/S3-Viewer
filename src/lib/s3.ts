@@ -4,19 +4,31 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { S3Connection } from "./connection";
 
 // ---------------------------------------------------------------------------
-// Singleton S3 client — credentials come from .env.local (server-side only)
+// Per-connection S3 client (server-side only). The active connection's
+// credentials + bucket come from `lib/connection` — env default or a runtime
+// connection stored in an encrypted cookie. Clients are cached per credential
+// set so we don't rebuild one on every call.
 // ---------------------------------------------------------------------------
-const s3 = new S3Client({
-  region: process.env.AWS_REGION!,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
+const clientCache = new Map<string, S3Client>();
 
-const BUCKET = process.env.S3_BUCKET!;
+function clientFor(conn: S3Connection): S3Client {
+  const key = `${conn.region}:${conn.accessKeyId}:${conn.secretAccessKey}`;
+  let client = clientCache.get(key);
+  if (!client) {
+    client = new S3Client({
+      region: conn.region,
+      credentials: {
+        accessKeyId: conn.accessKeyId,
+        secretAccessKey: conn.secretAccessKey,
+      },
+    });
+    clientCache.set(key, client);
+  }
+  return client;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,16 +60,19 @@ function normalisePrefix(prefix: string): string {
  * List folders and files at a given prefix (one level deep).
  * Pass an empty string (or "/") for the bucket root.
  */
-export async function listPrefix(prefix: string): Promise<S3ListResult> {
+export async function listPrefix(
+  conn: S3Connection,
+  prefix: string
+): Promise<S3ListResult> {
   const normalisedPrefix = normalisePrefix(prefix);
 
   const command = new ListObjectsV2Command({
-    Bucket: BUCKET,
+    Bucket: conn.bucket,
     Prefix: normalisedPrefix || undefined,
     Delimiter: "/",
   });
 
-  const response = await s3.send(command);
+  const response = await clientFor(conn).send(command);
 
   // CommonPrefixes → "folders"
   const folders: string[] =
@@ -107,13 +122,14 @@ export function contentTypeFromKey(key: string): string {
  * inline (e.g. PDFs open in the viewer instead of downloading).
  */
 export async function presignGet(
+  conn: S3Connection,
   key: string,
   expiresIn = 300
 ): Promise<string> {
   const contentType = contentTypeFromKey(key);
 
   const command = new GetObjectCommand({
-    Bucket: BUCKET,
+    Bucket: conn.bucket,
     Key: key,
     ResponseContentType: contentType,
     // Instruct browser to display inline for viewable types
@@ -122,5 +138,5 @@ export async function presignGet(
       : "inline",
   });
 
-  return getSignedUrl(s3, command, { expiresIn });
+  return getSignedUrl(clientFor(conn), command, { expiresIn });
 }

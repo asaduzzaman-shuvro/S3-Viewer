@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { isAuthed } from "@/lib/auth";
+import { getActiveConnection } from "@/lib/connection";
 import { presignGet, contentTypeFromKey } from "@/lib/s3";
 import PdfPreview from "@/components/PdfPreview";
 import ImagePreview from "@/components/ImagePreview";
@@ -26,6 +27,9 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
   const authed = await isAuthed();
   if (!authed) redirect("/login");
 
+  const conn = await getActiveConnection();
+  if (!conn) redirect("/browse");
+
   const { key: keySegments } = await params;
   const key = keySegments.map(decodeURIComponent).join("/");
   const fileName = key.split("/").pop() ?? key;
@@ -36,7 +40,7 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
   let fetchError = false;
 
   try {
-    url = await presignGet(key);
+    url = await presignGet(conn, key);
   } catch {
     fetchError = true;
   }
