@@ -310,10 +310,17 @@ a {
 .switch-row:hover {
   background: var(--accent-soft);
 }
-.switch-remove {
-  transition: color var(--transition), background var(--transition);
+.switch-action {
+  transition: color var(--transition), background var(--transition),
+    border-color var(--transition);
 }
-.switch-remove:hover {
-  color: var(--danger);
+.switch-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.switch-danger:hover {
   background: var(--danger-surface);
+  border-color: var(--danger);
+  color: var(--danger);
 }

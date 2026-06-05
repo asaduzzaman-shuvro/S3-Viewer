@@ -34,6 +34,9 @@ export interface S3Connection {
 export interface ConnectionStore {
   activeId: string;
   items: S3Connection[];
+  // When set, overrides the env-default connection's fields (wins over .env.local
+  // until reset). Lets the "default" bucket be edited like any other.
+  envOverride?: Omit<S3Connection, "id">;
 }
 
 /** A connection safe to send to the client — never includes the secret key. */
@@ -45,6 +48,8 @@ export interface SanitizedConnection {
   accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
+  // env-default only: true when an override is active (so the UI can offer "reset").
+  isOverridden: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,39 +182,52 @@ export async function addConnection(
   return item;
 }
 
+/** The env-default connection, with any saved override applied over the env vars. */
+function resolveEnvConnection(store: ConnectionStore | null): S3Connection | null {
+  if (store?.envOverride) {
+    return { id: ENV_CONNECTION_ID, ...store.envOverride };
+  }
+  return envConnection();
+}
+
 /** The id that actually resolves as active (mirrors getActiveConnection's precedence). */
 async function effectiveActiveId(): Promise<string | null> {
   const store = await readStore();
   if (store) {
-    if (store.activeId === ENV_CONNECTION_ID && envConnection()) {
+    if (store.activeId === ENV_CONNECTION_ID && resolveEnvConnection(store)) {
       return ENV_CONNECTION_ID;
     }
     if (store.items.some((c) => c.id === store.activeId)) {
       return store.activeId;
     }
   }
-  return envConnection() ? ENV_CONNECTION_ID : null;
+  return resolveEnvConnection(store) ? ENV_CONNECTION_ID : null;
 }
 
 /**
  * Resolve the active connection. Precedence: the store's active item (if the cookie
- * exists and points at a valid runtime item), else the env default, else null.
+ * exists and points at a valid runtime item), else the env default (with override
+ * applied), else null.
  */
 export async function getActiveConnection(): Promise<S3Connection | null> {
   const store = await readStore();
 
   if (store) {
     if (store.activeId === ENV_CONNECTION_ID) {
-      return envConnection();
+      return resolveEnvConnection(store);
     }
     const active = store.items.find((c) => c.id === store.activeId);
     if (active) return active;
   }
 
-  return envConnection();
+  return resolveEnvConnection(store);
 }
 
-function sanitize(conn: S3Connection, isActive: boolean): SanitizedConnection {
+function sanitize(
+  conn: S3Connection,
+  isActive: boolean,
+  isOverridden = false
+): SanitizedConnection {
   return {
     id: conn.id,
     label: conn.label,
@@ -218,17 +236,18 @@ function sanitize(conn: S3Connection, isActive: boolean): SanitizedConnection {
     accessKeyId: conn.accessKeyId,
     isEnv: conn.id === ENV_CONNECTION_ID,
     isActive,
+    isOverridden,
   };
 }
 
 /** Sanitized list for the client: env default (if any) first, then saved items. */
 export async function listConnections(): Promise<SanitizedConnection[]> {
   const store = await readStore();
-  const env = envConnection();
+  const env = resolveEnvConnection(store);
   const activeId = await effectiveActiveId();
 
   const out: SanitizedConnection[] = [];
-  if (env) out.push(sanitize(env, env.id === activeId));
+  if (env) out.push(sanitize(env, env.id === activeId, !!store?.envOverride));
   if (store) {
     for (const item of store.items) out.push(sanitize(item, item.id === activeId));
   }
@@ -239,46 +258,70 @@ export async function listConnections(): Promise<SanitizedConnection[]> {
 export async function setActiveConnection(id: string): Promise<void> {
   const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
   const exists =
-    id === ENV_CONNECTION_ID ? !!envConnection() : store.items.some((c) => c.id === id);
+    id === ENV_CONNECTION_ID
+      ? !!resolveEnvConnection(store)
+      : store.items.some((c) => c.id === id);
   if (!exists) throw new Error("Unknown connection.");
   store.activeId = id;
   await writeStore(store);
 }
 
-/** Raw saved connection (incl. secret) for server-side use. Null for env/unknown. */
+/**
+ * Raw connection (incl. secret) for server-side use. For the env default this is the
+ * resolved connection (override applied over env vars). Null if it doesn't exist.
+ */
 export async function getStoredConnection(id: string): Promise<S3Connection | null> {
-  if (id === ENV_CONNECTION_ID) return null;
   const store = await readStore();
+  if (id === ENV_CONNECTION_ID) return resolveEnvConnection(store);
   return store?.items.find((c) => c.id === id) ?? null;
 }
 
-/** Update a saved connection's fields (never the env default); active stays put. */
+/**
+ * Update a connection's fields and persist; active stays put. For the env default the
+ * change is stored as an override that wins over .env.local until reset.
+ */
 export async function updateConnection(
   id: string,
   fields: Partial<Omit<S3Connection, "id">>
 ): Promise<void> {
-  if (id === ENV_CONNECTION_ID) {
-    throw new Error("The default connection can't be edited.");
-  }
-  const store = await readStore();
-  const item = store?.items.find((c) => c.id === id);
-  if (!store || !item) throw new Error("Unknown connection.");
+  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
 
+  if (id === ENV_CONNECTION_ID) {
+    const base = resolveEnvConnection(store);
+    store.envOverride = {
+      label: fields.label ?? base?.label ?? "",
+      region: fields.region ?? base?.region ?? "",
+      bucket: fields.bucket ?? base?.bucket ?? "",
+      accessKeyId: fields.accessKeyId ?? base?.accessKeyId ?? "",
+      secretAccessKey: fields.secretAccessKey ?? base?.secretAccessKey ?? "",
+    };
+    await writeStore(store);
+    return;
+  }
+
+  const item = store.items.find((c) => c.id === id);
+  if (!item) throw new Error("Unknown connection.");
   Object.assign(item, fields);
   await writeStore(store);
 }
 
-/** Remove a saved connection (never the env default); re-point active if needed. */
+/**
+ * Remove a saved connection, or — for the env default — clear its override (reset to
+ * .env.local). Re-points the active connection if the removed one was active.
+ */
 export async function removeConnection(id: string): Promise<void> {
-  if (id === ENV_CONNECTION_ID) {
-    throw new Error("The default connection can't be removed.");
-  }
   const store = await readStore();
   if (!store) return;
 
+  if (id === ENV_CONNECTION_ID) {
+    delete store.envOverride; // reset the default to env-var values
+    await writeStore(store);
+    return;
+  }
+
   store.items = store.items.filter((c) => c.id !== id);
   if (store.activeId === id) {
-    store.activeId = envConnection()
+    store.activeId = resolveEnvConnection(store)
       ? ENV_CONNECTION_ID
       : store.items[0]?.id ?? ENV_CONNECTION_ID;
   }

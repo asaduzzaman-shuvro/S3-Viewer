@@ -12,6 +12,7 @@ export interface SwitcherConnection {
   accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
+  isOverridden: boolean;
 }
 
 interface BucketSwitcherProps {
@@ -95,34 +96,52 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
                       </span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    className="switch-action"
+                    style={styles.action}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditing(c);
+                      setAdding(false);
+                    }}
+                    disabled={busy}
+                    aria-label={`Edit ${c.label}`}
+                    title="Edit"
+                  >
+                    ✏️
+                  </button>
                   {!c.isEnv && (
-                    <>
-                      <button
-                        type="button"
-                        className="switch-remove"
-                        style={styles.remove}
-                        onClick={() => {
-                          setEditing(c);
-                          setAdding(false);
-                        }}
-                        disabled={busy}
-                        aria-label={`Edit ${c.label}`}
-                        title="Edit"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        className="switch-remove"
-                        style={styles.remove}
-                        onClick={() => remove(c.id)}
-                        disabled={busy}
-                        aria-label={`Remove ${c.label}`}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      className="switch-action switch-danger"
+                      style={styles.action}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(c.id);
+                      }}
+                      disabled={busy}
+                      aria-label={`Remove ${c.label}`}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  {c.isEnv && c.isOverridden && (
+                    <button
+                      type="button"
+                      className="switch-action"
+                      style={styles.action}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(c.id);
+                      }}
+                      disabled={busy}
+                      aria-label="Reset default to .env"
+                      title="Reset to .env values"
+                    >
+                      ↺
+                    </button>
                   )}
                 </div>
               ))}
@@ -220,12 +239,13 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     color: "var(--muted)",
   },
-  list: { display: "flex", flexDirection: "column", gap: 2 },
+  list: { display: "flex", flexDirection: "column", gap: 6 },
   row: {
     display: "flex",
     alignItems: "center",
+    gap: 2,
+    paddingRight: 6,
     borderRadius: 9,
-    overflow: "hidden",
   },
   rowActive: { background: "var(--accent-soft)" },
   rowMain: {
@@ -258,20 +278,20 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  remove: {
+  action: {
     flex: "none",
-    width: 30,
-    height: 30,
-    marginRight: 4,
+    width: 36,
+    height: 36,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     background: "transparent",
-    border: "none",
-    borderRadius: 8,
+    border: "1px solid transparent",
+    borderRadius: 9,
     color: "var(--muted)",
     cursor: "pointer",
-    fontSize: 12,
+    fontSize: 15,
+    lineHeight: 1,
   },
   footer: { marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" },
   editHeader: {
