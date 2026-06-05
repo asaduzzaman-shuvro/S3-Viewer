@@ -8,9 +8,9 @@ import { cookies } from "next/headers";
 import {
   createCipheriv,
   createDecipheriv,
-  createHash,
   randomBytes,
   randomUUID,
+  scryptSync,
 } from "crypto";
 import { getAppSecret, COOKIE_SECURE } from "./auth";
 
@@ -84,9 +84,17 @@ export function hasEnvConnection(): boolean {
 // Payload format: base64( iv(12) | authTag(16) | ciphertext ).
 // ---------------------------------------------------------------------------
 
+// Derive the 32-byte AES key from APP_SECRET via scrypt (a slow KDF), so even a
+// short/weak secret yields a strong key — stretching makes offline brute force
+// expensive. Memoized: scrypt is deliberately CPU-heavy, and the secret is constant
+// per process, so derive once. (Changing the salt invalidates existing s3v_conn
+// cookies — they simply fail to decrypt and fall back to the env default.)
+let cachedKey: Buffer | null = null;
 function encryptionKey(): Buffer {
-  // sha256 yields a stable 32-byte key regardless of secret length.
-  return createHash("sha256").update(getAppSecret()).digest();
+  if (!cachedKey) {
+    cachedKey = scryptSync(getAppSecret(), "s3v-connection-store-v1", 32);
+  }
+  return cachedKey;
 }
 
 export function encrypt(plaintext: string): string {

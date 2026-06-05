@@ -18,6 +18,12 @@ interface ConnectionBody {
   secretAccessKey?: string;
 }
 
+// AWS region tokens are lowercase letters, digits, and hyphens (e.g. us-east-1).
+// Constrain it so a crafted value can't influence the S3 client's endpoint host.
+const REGION_RE = /^[a-z0-9-]+$/;
+const REGION_ERROR =
+  "Region must look like 'us-east-1' (lowercase letters, digits, and hyphens only).";
+
 // Map raw AWS SDK errors to messages a user can act on.
 function friendlyError(err: unknown): string {
   const name = (err as { name?: string })?.name ?? "";
@@ -55,6 +61,10 @@ export async function POST(req: NextRequest) {
       { error: "Region, bucket, access key ID, and secret access key are all required." },
       { status: 400 }
     );
+  }
+
+  if (!REGION_RE.test(region)) {
+    return NextResponse.json({ error: REGION_ERROR }, { status: 400 });
   }
 
   const candidate: S3Connection = {
@@ -114,6 +124,10 @@ export async function PUT(req: NextRequest) {
     accessKeyId: body.accessKeyId?.trim() || existing.accessKeyId,
     secretAccessKey: body.secretAccessKey?.trim() || existing.secretAccessKey,
   };
+
+  if (!REGION_RE.test(merged.region)) {
+    return NextResponse.json({ error: REGION_ERROR }, { status: 400 });
+  }
 
   // Re-validate only if a connection-affecting field actually changed.
   const credsChanged =
