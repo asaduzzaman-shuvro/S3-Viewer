@@ -168,6 +168,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
     flex: "none",
+    // Lift the switcher (and its dropdown) above the file rows, which each become
+    // their own stacking context via the browse-enter entrance transform.
+    position: "relative",
+    zIndex: 30,
   },
   eyebrow: {
     display: "inline-block",
