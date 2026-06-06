@@ -129,6 +129,17 @@ export function contentTypeFromKey(key: string): string {
 }
 
 /**
+ * Read an object's body as text, server-side. Used for text/JSON previews so the
+ * browser doesn't have to fetch the presigned URL directly (which would require the
+ * bucket to have a CORS policy). Throws on S3 errors; the caller decides how to surface.
+ */
+export async function getObjectText(conn: S3Connection, key: string): Promise<string> {
+  const command = new GetObjectCommand({ Bucket: conn.bucket, Key: key });
+  const response = await clientFor(conn).send(command);
+  return (await response.Body?.transformToString()) ?? "";
+}
+
+/**
  * Generate a short-lived presigned GET URL for a given S3 key.
  * The ResponseContentType header is set so browsers render the object
  * inline (e.g. PDFs open in the viewer instead of downloading).

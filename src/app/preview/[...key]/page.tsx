@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { isAuthed } from "@/lib/auth";
 import { getActiveConnection } from "@/lib/connection";
-import { presignGet, contentTypeFromKey } from "@/lib/s3";
+import { presignGet, contentTypeFromKey, getObjectText } from "@/lib/s3";
 import PdfPreview from "@/components/PdfPreview";
 import ImagePreview from "@/components/ImagePreview";
 import JsonPreview from "@/components/JsonPreview";
@@ -50,6 +50,16 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
   const isJson = ext === "json";
   const isViewable = isImage || isPdf || isJson;
 
+  // Fetch JSON content server-side (avoids the browser needing CORS on the bucket).
+  let jsonText: string | null = null;
+  if (isJson && !fetchError) {
+    try {
+      jsonText = await getObjectText(conn, key);
+    } catch {
+      jsonText = null;
+    }
+  }
+
   return (
     <main style={styles.main}>
       {/* Header */}
@@ -80,7 +90,7 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
       ) : isImage ? (
         <ImagePreview url={url} fileName={fileName} />
       ) : isJson ? (
-        <JsonPreview url={url} fileName={fileName} />
+        <JsonPreview url={url} fileName={fileName} text={jsonText} />
       ) : (
         <div style={styles.unsupported}>
           <p style={styles.unsupportedText}>

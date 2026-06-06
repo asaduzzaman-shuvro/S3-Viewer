@@ -1,40 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { JsonView, allExpanded, defaultStyles } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 
 interface JsonPreviewProps {
   url: string;
   fileName: string;
+  // Raw JSON text, read server-side (null if the server couldn't fetch it).
+  text: string | null;
 }
 
-type LoadState = "loading" | "error" | "done";
-
-export default function JsonPreview({ url, fileName }: JsonPreviewProps) {
-  const [data, setData] = useState<object | null>(null);
-  const [state, setState] = useState<LoadState>("loading");
-  const [raw, setRaw] = useState("");
+export default function JsonPreview({ url, fileName, text }: JsonPreviewProps) {
   const [viewMode, setViewMode] = useState<"tree" | "raw">("tree");
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        setRaw(text);
-        setData(JSON.parse(text) as object);
-        setState("done");
-      } catch {
-        setState("error");
-      }
-    }
-    load();
-  }, [url]);
+  if (text === null) {
+    return <p style={{ ...styles.msg, color: "#d32f2f" }}>Couldn&apos;t load this JSON file.</p>;
+  }
 
-  if (state === "loading") return <p style={styles.msg}>Loading JSON…</p>;
-  if (state === "error") return <p style={{ ...styles.msg, color: "#d32f2f" }}>Failed to load or parse JSON.</p>;
+  // Parse once for the tree view; fall back to raw-only if it isn't valid JSON.
+  let data: object | null = null;
+  let parseError = false;
+  try {
+    data = JSON.parse(text) as object;
+  } catch {
+    parseError = true;
+  }
 
   return (
     <div style={styles.wrapper}>
@@ -59,8 +50,14 @@ export default function JsonPreview({ url, fileName }: JsonPreviewProps) {
         </a>
       </div>
 
+      {parseError && (
+        <p style={{ ...styles.msg, color: "#d32f2f" }}>
+          This file isn&apos;t valid JSON — showing raw text.
+        </p>
+      )}
+
       {/* Tree view */}
-      {viewMode === "tree" && data !== null && (
+      {viewMode === "tree" && !parseError && data !== null && (
         <div style={styles.treeContainer}>
           <JsonView
             data={data}
@@ -70,9 +67,9 @@ export default function JsonPreview({ url, fileName }: JsonPreviewProps) {
         </div>
       )}
 
-      {/* Raw view */}
-      {viewMode === "raw" && (
-        <pre style={styles.raw}>{raw}</pre>
+      {/* Raw view (also used as fallback when the JSON doesn't parse) */}
+      {(viewMode === "raw" || parseError) && (
+        <pre style={styles.raw}>{text}</pre>
       )}
     </div>
   );
