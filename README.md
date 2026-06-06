@@ -42,23 +42,33 @@ npm install
 
 ### Configuration
 
-Copy the example env file and fill in every value:
+Copy the example env file and fill it in:
 
 ```bash
 cp .env.example .env.local
 ```
 
+**Required — the app won't run without these two:**
+
+| Variable       | Purpose |
+|----------------|---------|
+| `APP_PASSWORD` | The password users type at `/login`. |
+| `APP_SECRET`   | Long random string (`openssl rand -hex 32`). Signs the auth-cookie token **and** is the key that encrypts saved S3 credentials — so it's mandatory even if you provide no bucket up front. The app errors on the first request if it's missing. |
+
+**Optional — a default S3 bucket:**
+
 | Variable                | Purpose |
 |-------------------------|---------|
-| `AWS_ACCESS_KEY_ID`     | IAM access key id used by the S3 client |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret access key |
-| `AWS_REGION`            | Region of the bucket, e.g. `us-east-1` |
-| `S3_BUCKET`             | Name of the bucket to browse |
-| `APP_PASSWORD`          | The password users type at `/login` |
-| `APP_SECRET`            | Long random string; signs the auth cookie token and encrypts saved S3 credentials |
+| `AWS_REGION`            | Region of the bucket, e.g. `us-east-1`. |
+| `S3_BUCKET`             | Name of the bucket to browse. |
+| `AWS_ACCESS_KEY_ID`     | IAM access key id used by the S3 client. |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret access key. |
 
-A good `APP_SECRET` is any long random string, e.g. `openssl rand -hex 32`.
-These values are read server-side only and are never sent to the browser.
+Provide **all four** AWS vars to start with a default bucket, or **none** of them —
+if they're absent you simply connect a bucket from the in-app form after logging in
+(and you can add or switch buckets anytime via the top-right switcher). Partial AWS
+config is treated as no default. All values are read server-side only and never sent
+to the browser.
 
 ### Run
 

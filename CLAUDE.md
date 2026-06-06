@@ -54,8 +54,11 @@ AWS_REGION=             # OPTIONAL
 S3_BUCKET=              # OPTIONAL
 ```
 
-The four AWS vars are now **optional**. If all are present they form the default
-connection; if absent, users enter bucket credentials at runtime via the in-app form.
+**`APP_PASSWORD` and `APP_SECRET` are the only two required vars** — the app throws on
+the first request without `APP_SECRET` (it encrypts saved credentials), and login needs
+`APP_PASSWORD`. The four AWS vars are **optional**: provide all four for a default
+bucket, or none and connect a bucket at runtime via the in-app form after login (add /
+switch buckets anytime via the switcher). Partial AWS config counts as no default.
 
 ## Auth Model
 
