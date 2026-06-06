@@ -23,6 +23,9 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
     const canRestore = await canRestoreEnvDefault();
     return (
       <main className="auth-bg">
+        <div style={styles.connTopRight}>
+          <LogoutButton />
+        </div>
         <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
           <span style={styles.connEyebrow}>● connect</span>
           <h1 style={styles.connTitle}>Connect an S3 bucket</h1>
@@ -245,5 +248,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     lineHeight: 1.5,
     color: "var(--muted)",
+  },
+  connTopRight: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    zIndex: 2,
   },
 };

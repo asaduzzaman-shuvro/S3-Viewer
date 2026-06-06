@@ -297,6 +297,16 @@ a {
   }
 }
 
+/* Sign-out button */
+.signout-btn {
+  transition: border-color var(--transition), color var(--transition),
+    background var(--transition);
+}
+.signout-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Bucket switcher */
 .switch-btn {
   transition: border-color var(--transition), background var(--transition);
