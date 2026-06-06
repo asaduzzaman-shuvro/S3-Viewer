@@ -48,3 +48,6 @@ next-env.d.ts
 # claude code — keep skills, hooks & shared settings; ignore local overrides + eval scratch
 .claude/settings.local.json
 .claude/skills/documentation-workspace/
+
+# local working plans (kept per-project, not committed)
+docs/plans/
