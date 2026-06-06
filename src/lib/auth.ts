@@ -3,12 +3,12 @@ import { NextRequest } from "next/server";
 
 export const AUTH_COOKIE = "s3v_auth";
 
-// Mark cookies Secure (HTTPS-only) in every environment so the auth token and the
-// encrypted-credential cookie are never sent over plain HTTP. Browsers treat
-// http://localhost as a secure context, so local dev still works (note: Safari is
-// stricter, and accessing the dev server over a LAN IP rather than localhost will
-// not send these cookies).
-export const COOKIE_SECURE = true;
+// Mark cookies Secure (HTTPS-only) in production so the auth token and the encrypted-
+// credential cookie are never sent over plain HTTP. Left off in development because the
+// dev server runs on http://localhost — a Secure cookie would not be sent back over
+// plain HTTP (Safari refuses it outright), which would bounce every post-login request
+// back to /login. Production must be served over HTTPS for this to protect anything.
+export const COOKIE_SECURE = process.env.NODE_ENV === "production";
 
 // ---------------------------------------------------------------------------
 // APP_SECRET underpins both the auth cookie and the AES encryption of saved S3

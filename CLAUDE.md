@@ -17,7 +17,7 @@ src/
     api/
       list/route.ts       — GET /api/list?prefix= — lists folders & files at a prefix
       login/route.ts      — POST /api/login — validates APP_PASSWORD, sets auth cookie
-      logout/route.ts     — POST /api/logout — clears auth + connection cookies
+      logout/route.ts     — POST /api/logout — clears the auth cookie (saved connections persist)
       signed-url/route.ts — GET /api/signed-url?key= — returns a presigned S3 URL
       connection/route.ts — POST/PATCH/DELETE — add/activate/remove a runtime S3 connection
     browse/[[...path]]/   — Server component: folder browser (catch-all route)

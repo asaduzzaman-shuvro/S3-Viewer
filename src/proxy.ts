@@ -1,29 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthedRequest } from "@/lib/auth";
 
-// Paths that don't require authentication
-const PUBLIC_PATHS = ["/login", "/api/login"];
+function redirectTo(req: NextRequest, pathname: string) {
+  const url = req.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = "";
+  return NextResponse.redirect(url);
+}
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow public paths and Next.js internals
+  // Next.js internals and the login POST endpoint always pass through.
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/api/login")
   ) {
     return NextResponse.next();
   }
 
-  if (!(await isAuthedRequest(req))) {
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    return NextResponse.redirect(loginUrl);
+  const authed = await isAuthedRequest(req);
+
+  // The login page is public, but an already-authenticated visitor (e.g. via the
+  // browser Back button) should be sent on to the app instead of seeing the form.
+  if (pathname.startsWith("/login")) {
+    if (authed) return redirectTo(req, "/browse");
+    // Never cache the login page: otherwise the browser restores it from its
+    // back/forward cache on a Back navigation without re-requesting, so the
+    // authenticated→/browse redirect above wouldn't get a chance to run.
+    const res = NextResponse.next();
+    res.headers.set("Cache-Control", "no-store, must-revalidate");
+    return res;
   }
 
-  return NextResponse.next();
+  // Everything else requires auth.
+  return authed ? NextResponse.next() : redirectTo(req, "/login");
 }
 
 export const config = {

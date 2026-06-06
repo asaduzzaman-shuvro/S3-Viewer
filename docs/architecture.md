@@ -98,7 +98,7 @@ a time.
   endpoint exists for programmatic/client use.
 - **Login / logout.** `POST /api/login` runs in the Node.js runtime (it needs
   `crypto.timingSafeEqual`), and on success sets `s3v_auth` to the one-way
-  `authToken()`. `POST /api/logout` clears the auth and connection cookies with `maxAge: 0`.
+  `authToken()`. `POST /api/logout` clears only the auth cookie (`maxAge: 0`); the saved-connection store persists across logins.
 
 ## Key decisions
 

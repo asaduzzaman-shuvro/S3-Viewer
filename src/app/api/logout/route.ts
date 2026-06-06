@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE, COOKIE_SECURE } from "@/lib/auth";
-import { CONNECTION_COOKIE } from "@/lib/connection";
 
 export async function POST() {
   const res = NextResponse.json({ ok: true });
-  const expire = {
+  // Clear only the auth cookie. The saved-connection store (s3v_conn) is left intact
+  // so customizations — added buckets and a renamed/overridden default — persist across
+  // logins. This is a single-shared-password tool, so "the next user" is the same user;
+  // the store stays encrypted + httpOnly in the meantime. (Use the switcher's remove/reset
+  // controls to clear connections explicitly.)
+  res.cookies.set(AUTH_COOKIE, "", {
     httpOnly: true,
-    sameSite: "lax" as const,
+    sameSite: "lax",
     path: "/",
     secure: COOKIE_SECURE,
     maxAge: 0,
-  };
-  // Clear the auth cookie and drop any saved S3 connections so the next
-  // user doesn't inherit them.
-  res.cookies.set(AUTH_COOKIE, "", expire);
-  res.cookies.set(CONNECTION_COOKIE, "", expire);
+  });
   return res;
 }
