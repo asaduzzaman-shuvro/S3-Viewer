@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
-import { getActiveConnection, listConnections } from "@/lib/connection";
+import { getActiveConnection, listConnections, canRestoreEnvDefault } from "@/lib/connection";
 import { listPrefix } from "@/lib/s3";
 import Breadcrumb from "@/components/Breadcrumb";
 import FileRow from "@/components/FileRow";
 import LogoutButton from "@/components/LogoutButton";
 import ConnectionForm from "@/components/ConnectionForm";
 import BucketSwitcher from "@/components/BucketSwitcher";
+import RestoreDefaultButton from "@/components/RestoreDefaultButton";
 
 interface BrowsePageProps {
   params: Promise<{ path?: string[] }>;
@@ -17,8 +18,9 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   if (!authed) redirect("/login");
 
   const conn = await getActiveConnection();
-  // No connection configured (no env creds, no saved connection) → show the form.
+  // No connection configured (no env creds, or everything was deleted) → show the form.
   if (!conn) {
+    const canRestore = await canRestoreEnvDefault();
     return (
       <main className="auth-bg">
         <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
@@ -29,6 +31,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
             validated and stored encrypted, server-side only.
           </p>
           <ConnectionForm submitLabel="Connect & open" />
+          {canRestore && <RestoreDefaultButton />}
         </div>
       </main>
     );
@@ -81,6 +84,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   const isEmpty = folderItems.length === 0 && fileItems.length === 0;
   const here = segments.length > 0 ? segments[segments.length - 1] : "root";
   const connections = await listConnections();
+  const restorableDefault = await canRestoreEnvDefault();
 
   return (
     <div className="browse-shell">
@@ -97,7 +101,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
             </p>
           </div>
           <div style={styles.headerActions} className="browse-enter">
-            <BucketSwitcher connections={connections} />
+            <BucketSwitcher connections={connections} restorableDefault={restorableDefault} />
             <LogoutButton />
           </div>
         </header>

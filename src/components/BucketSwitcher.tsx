@@ -17,13 +17,16 @@ export interface SwitcherConnection {
 
 interface BucketSwitcherProps {
   connections: SwitcherConnection[];
+  // The env default is configured but currently deleted/hidden — offer to restore it.
+  restorableDefault?: boolean;
 }
 
-export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
+export default function BucketSwitcher({ connections, restorableDefault }: BucketSwitcherProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<SwitcherConnection | null>(null);
+  const [confirming, setConfirming] = useState<SwitcherConnection | null>(null);
   const [busy, setBusy] = useState(false);
 
   const active = connections.find((c) => c.isActive);
@@ -46,6 +49,7 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
     setBusy(true);
     await fetch(`/api/connection?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     setBusy(false);
+    setConfirming(null);
     router.refresh();
   }
 
@@ -111,38 +115,20 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
                   >
                     ✏️
                   </button>
-                  {!c.isEnv && (
-                    <button
-                      type="button"
-                      className="switch-action switch-danger"
-                      style={styles.action}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(c.id);
-                      }}
-                      disabled={busy}
-                      aria-label={`Remove ${c.label}`}
-                      title="Remove"
-                    >
-                      ✕
-                    </button>
-                  )}
-                  {c.isEnv && c.isOverridden && (
-                    <button
-                      type="button"
-                      className="switch-action"
-                      style={styles.action}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        remove(c.id);
-                      }}
-                      disabled={busy}
-                      aria-label="Reset default to .env"
-                      title="Reset to .env values"
-                    >
-                      ↺
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="switch-action switch-danger"
+                    style={styles.action}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirming(c);
+                    }}
+                    disabled={busy}
+                    aria-label={`Delete ${c.label}`}
+                    title="Delete"
+                  >
+                    🗑️
+                  </button>
                 </div>
               ))}
             </div>
@@ -182,13 +168,65 @@ export default function BucketSwitcher({ connections }: BucketSwitcherProps) {
                   }}
                 />
               ) : (
-                <button type="button" style={styles.addBtn} onClick={() => setAdding(true)}>
-                  + Add another bucket
-                </button>
+                <>
+                  {restorableDefault && (
+                    <button
+                      type="button"
+                      style={styles.restoreBtn}
+                      onClick={() => activate("env")}
+                      disabled={busy}
+                    >
+                      ↺ Restore default bucket
+                    </button>
+                  )}
+                  <button type="button" style={styles.addBtn} onClick={() => setAdding(true)}>
+                    + Add another bucket
+                  </button>
+                </>
               )}
             </div>
           </div>
         </>
+      )}
+
+      {confirming && (
+        <div
+          style={styles.modalBackdrop}
+          onClick={() => !busy && setConfirming(null)}
+        >
+          <div
+            style={styles.modalCard}
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={styles.modalTitle}>Delete bucket?</h3>
+            <p style={styles.modalText}>
+              Delete <strong>{confirming.label}</strong>?{" "}
+              {confirming.isEnv
+                ? "You can restore the default bucket afterwards."
+                : "You'll need to re-enter its details to use it again."}
+            </p>
+            <div style={styles.modalActions}>
+              <button
+                type="button"
+                style={styles.modalCancel}
+                onClick={() => setConfirming(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.modalDelete}
+                onClick={() => remove(confirming.id)}
+                disabled={busy}
+              >
+                {busy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -326,6 +364,73 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--accent)",
     background: "transparent",
     border: "1px dashed var(--border)",
+    borderRadius: 9,
+    cursor: "pointer",
+  },
+  restoreBtn: {
+    width: "100%",
+    padding: "9px 0",
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--foreground)",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 9,
+    cursor: "pointer",
+  },
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 100,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    background: "rgba(0, 0, 0, 0.5)",
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    background: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: 14,
+    boxShadow: "var(--shadow-card)",
+    padding: 22,
+    textAlign: "left",
+  },
+  modalTitle: {
+    margin: "0 0 8px",
+    fontFamily: "var(--font-display), system-ui, sans-serif",
+    fontSize: 18,
+    fontWeight: 700,
+    color: "var(--foreground)",
+  },
+  modalText: {
+    margin: "0 0 20px",
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: "var(--muted)",
+    wordBreak: "break-word",
+  },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: 10 },
+  modalCancel: {
+    padding: "9px 16px",
+    fontSize: 14,
+    fontWeight: 600,
+    color: "var(--foreground)",
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: 9,
+    cursor: "pointer",
+  },
+  modalDelete: {
+    padding: "9px 18px",
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#fff",
+    background: "var(--danger)",
+    border: "1px solid var(--danger)",
     borderRadius: 9,
     cursor: "pointer",
   },

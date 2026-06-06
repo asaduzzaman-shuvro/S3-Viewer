@@ -37,6 +37,10 @@ export interface ConnectionStore {
   // When set, overrides the env-default connection's fields (wins over .env.local
   // until reset). Lets the "default" bucket be edited like any other.
   envOverride?: Omit<S3Connection, "id">;
+  // When true, the env-default bucket is hidden (the user deleted it). It otherwise
+  // regenerates from the env vars on every request; this persists the deletion.
+  // Restorable while the env vars remain set.
+  envHidden?: boolean;
 }
 
 /** A connection safe to send to the client — never includes the secret key. */
@@ -194,6 +198,8 @@ export async function addConnection(
 
 /** The env-default connection, with any saved override applied over the env vars. */
 function resolveEnvConnection(store: ConnectionStore | null): S3Connection | null {
+  // Deleted by the user — stays hidden until restored, even though the env vars exist.
+  if (store?.envHidden) return null;
   if (store?.envOverride) {
     return { id: ENV_CONNECTION_ID, ...store.envOverride };
   }
@@ -267,13 +273,21 @@ export async function listConnections(): Promise<SanitizedConnection[]> {
 /** Make an existing connection (env or saved) the active one. */
 export async function setActiveConnection(id: string): Promise<void> {
   const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
-  const exists =
-    id === ENV_CONNECTION_ID
-      ? !!resolveEnvConnection(store)
-      : store.items.some((c) => c.id === id);
-  if (!exists) throw new Error("Unknown connection.");
+  if (id === ENV_CONNECTION_ID) {
+    // The env default exists (and is restorable) whenever the env vars are set —
+    // activating it also un-hides it if it had been deleted.
+    if (!hasEnvConnection()) throw new Error("Unknown connection.");
+    store.envHidden = false;
+  } else if (!store.items.some((c) => c.id === id)) {
+    throw new Error("Unknown connection.");
+  }
   store.activeId = id;
   await writeStore(store);
+}
+
+/** True when the env default is configured but currently hidden (deleted) — restorable. */
+export async function canRestoreEnvDefault(): Promise<boolean> {
+  return hasEnvConnection() && !!(await readStore())?.envHidden;
 }
 
 /**
@@ -316,15 +330,19 @@ export async function updateConnection(
 }
 
 /**
- * Remove a saved connection, or — for the env default — clear its override (reset to
- * .env.local). Re-points the active connection if the removed one was active.
+ * Remove a connection. For a saved bucket this drops it from the list; for the env
+ * default it persistently hides it (it would otherwise regenerate from the env vars) —
+ * restorable later while the env vars remain set. Re-points active if needed.
  */
 export async function removeConnection(id: string): Promise<void> {
-  const store = await readStore();
-  if (!store) return;
+  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
 
   if (id === ENV_CONNECTION_ID) {
-    delete store.envOverride; // reset the default to env-var values
+    store.envHidden = true;
+    delete store.envOverride; // drop any customization too
+    if (store.activeId === ENV_CONNECTION_ID) {
+      store.activeId = store.items[0]?.id ?? ENV_CONNECTION_ID; // env now resolves null
+    }
     await writeStore(store);
     return;
   }
