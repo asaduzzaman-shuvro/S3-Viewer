@@ -7,6 +7,7 @@ A Next.js 16 app for browsing and previewing files stored in an AWS S3 bucket, p
 - **Framework**: Next.js 16 (App Router) with React 19
 - **Language**: TypeScript 5
 - **AWS**: `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`
+- **Database**: Prisma 6 + SQLite (local `prisma/dev.db`) — stores saved S3 connections
 - **Runtime**: Node.js (server components/routes), Edge (middleware)
 
 ## Project Structure
@@ -34,10 +35,14 @@ src/
     BucketSwitcher.tsx    — Top-right control to switch/add/remove S3 connections
   lib/
     s3.ts                 — Per-connection S3 client; listPrefix(), presignGet(), validateConnection(), contentTypeFromKey()
-    connection.ts         — Resolves the active S3 connection (env default or encrypted-cookie store)
+    connection.ts         — Resolves the active S3 connection (env default or the SQLite/Prisma store); encrypt()/decrypt()
+    db.ts                 — PrismaClient singleton (Node-only; never import from middleware)
     auth.ts               — Cookie-based auth helpers (Edge-safe); isAuthed(), isAuthedRequest(), getAppSecret()
     auth.server.ts        — Node-only verifyPassword() (constant-time)
   proxy.ts                — Middleware: redirects unauthenticated requests to /login
+prisma/
+  schema.prisma           — Connection + AppSettings models (committed)
+  migrations/             — committed; the dev.db data file is gitignored
 ```
 
 ## Environment Variables
@@ -71,11 +76,16 @@ switch buckets anytime via the switcher). Partial AWS config counts as no defaul
 ## S3 Connections
 
 - The **active connection** (bucket + credentials) is resolved by `lib/connection.ts`:
-  a runtime connection from the encrypted `s3v_conn` cookie takes precedence, otherwise
-  the env default, otherwise none (the browse page shows a connection form).
-- Runtime connections are validated with a real `ListObjectsV2` call before saving,
-  stored AES-256-GCM-encrypted (keyed off `APP_SECRET`) in an httpOnly cookie, and never
-  exposed to client JS (the switcher receives a sanitized list with no secret keys).
+  a saved connection from the **SQLite DB** (active row) takes precedence, otherwise the
+  env default, otherwise none (the browse page shows a connection form).
+- Saved connections live in the `Connection` table; which one is active plus the
+  env-default hidden/override state live in a single `AppSettings` row (id `"global"`).
+  This is a **global/shared** store (no per-user scoping yet — that's a future addition
+  once SSO provides identity, via a `userId` column).
+- Runtime connections are validated with a real `ListObjectsV2` call before saving. The
+  **secret access key is stored AES-256-GCM-encrypted** (scrypt key from `APP_SECRET`) in
+  the `secretEnc` column — never plaintext — and is never exposed to client JS (the
+  switcher receives a sanitized list with no secret keys).
 - **Security**: credentials entered at runtime are entrusted to the app — prefer
   **read-only / least-privilege IAM keys** (or temporary STS credentials).
 
@@ -86,7 +96,17 @@ npm run dev     # Start dev server on http://localhost:3000
 npm run build   # Production build
 npm run start   # Start production server
 npm run lint    # Run ESLint
+
+# Database (Prisma + SQLite)
+npx prisma migrate dev     # create/apply migrations + (re)create prisma/dev.db in dev
+npx prisma migrate deploy  # apply committed migrations (fresh clone / production)
+npx prisma generate        # regenerate the client (also runs on `npm install` via postinstall)
+npx prisma studio          # browse the local DB
 ```
+
+On a fresh clone: `npm install` (runs `prisma generate`) then `npx prisma migrate dev`
+to create the local `prisma/dev.db` from the committed migrations. The DB uses a literal
+SQLite path in `schema.prisma` (`file:./dev.db`), so no `DATABASE_URL` env var is needed.
 
 ## Key Patterns
 

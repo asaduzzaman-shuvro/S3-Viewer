@@ -51,3 +51,7 @@ next-env.d.ts
 
 # local working plans (kept per-project, not committed)
 docs/plans/
+
+# prisma — local SQLite database (schema + migrations are committed; data is not)
+/prisma/dev.db
+/prisma/*.db-journal

@@ -24,6 +24,7 @@ inline — without exposing the bucket publicly.
 | UI        | React `19.2.4`, inline `React.CSSProperties` styles (no CSS framework) |
 | Language  | TypeScript `5` |
 | AWS       | `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` (`^3.1045.0`) |
+| Database  | Prisma `6` + SQLite (`prisma/dev.db`) — stores saved S3 connections |
 | JSON view | `react-json-view-lite` `^2.5.0` |
 
 ## Getting started
@@ -37,8 +38,13 @@ inline — without exposing the bucket publicly.
 ### Installation
 
 ```bash
-npm install
+npm install                 # also runs `prisma generate` (postinstall)
+npx prisma migrate dev      # create the local SQLite DB (prisma/dev.db) from migrations
 ```
+
+The SQLite database stores saved S3 connections. Its schema + migrations are committed;
+the `prisma/dev.db` data file is gitignored. No `DATABASE_URL` is needed — the SQLite path
+is set directly in `prisma/schema.prisma`.
 
 ### Configuration
 
@@ -139,15 +145,20 @@ src/
       login/route.ts       — POST /api/login — validate password, set cookie
       logout/route.ts      — POST /api/logout — clear cookie
       signed-url/route.ts  — GET /api/signed-url — presigned URL for a key
+      connection/route.ts  — POST/PATCH/PUT/DELETE — add/activate/edit/remove a connection
     browse/[[...path]]/     — Folder browser (server component, catch-all route)
     preview/[...key]/       — File preview page
     login/                  — Login page
-  components/               — Breadcrumb, FileRow, Image/Pdf/Json previews, LogoutButton
+  components/               — Breadcrumb, FileRow, previews, LogoutButton, ConnectionForm, BucketSwitcher
   lib/
     s3.ts                  — S3 client, listPrefix(), presignGet(), contentTypeFromKey()
+    connection.ts          — Active-connection resolver (SQLite store or env default); encrypt()/decrypt()
+    db.ts                  — PrismaClient singleton
     auth.ts                — Edge-safe cookie auth helpers (isAuthedRequest, isAuthed)
     auth.server.ts         — Node-only verifyPassword() (timingSafeEqual)
   proxy.ts                 — Edge middleware: redirect unauthenticated requests to /login
+prisma/
+  schema.prisma            — Connection + AppSettings models (committed; dev.db gitignored)
 ```
 
 ## Security notes

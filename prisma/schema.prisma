@@ -1,0 +1,33 @@
+// Prisma schema — local SQLite store for S3 connections.
+// Schema + migrations are committed; the .db file is gitignored (no data in git).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db" // resolves to prisma/dev.db (relative to this file)
+}
+
+// A saved S3 connection. The secret access key is stored AES-256-GCM encrypted
+// (lib/connection.ts encrypt/decrypt, keyed off APP_SECRET) — never in plaintext.
+model Connection {
+  id          String   @id @default(cuid())
+  label       String
+  region      String
+  bucket      String
+  accessKeyId String
+  secretEnc   String // ciphertext of the secret access key
+  createdAt   DateTime @default(now())
+}
+
+// Single global settings row (id = "global"): which connection is active, plus the
+// env-default override/hidden state. (Per-user scoping is a future addition once SSO
+// provides identity — would add a userId column + scope queries.)
+model AppSettings {
+  id                 String  @id @default("global")
+  activeConnectionId String?
+  envHidden          Boolean @default(false)
+  envOverrideJson    String? // JSON-encoded env-default override, or null
+}

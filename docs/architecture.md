@@ -20,7 +20,8 @@ in S3 lives in two environment-derived secrets (`APP_PASSWORD` for login,
 | **Edge-safe auth** | `src/lib/auth.ts` | Async `isAuthedRequest(req)` / `isAuthed()` compare the `s3v_auth` cookie to `authToken()` — a one-way `SHA-256(APP_SECRET + ":s3v-auth-v1")` hashed via Web Crypto, so it runs in both Edge and Node. No Node-`crypto` import. |
 | **Node-only auth** | `src/lib/auth.server.ts` | `verifyPassword()` — constant-time `timingSafeEqual` check, used only by the login route. |
 | **S3 access layer** | `src/lib/s3.ts` | Per-connection `S3Client` (cached by credentials), `listPrefix(conn,…)`, `presignGet(conn,…)`, `validateConnection()`, `contentTypeFromKey()`. The only module that talks to AWS. |
-| **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection`: an AES-256-GCM-encrypted `s3v_conn` cookie (runtime buckets) overrides the env default. Add/activate/remove + sanitized list for the client. |
+| **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection` from the **SQLite DB** (a saved `Connection` row overrides the env default; `AppSettings` holds the active id + env hidden/override). Secrets stored AES-256-GCM-encrypted (`secretEnc`). Add/edit/activate/remove + sanitized list for the client. |
+| **Database** | `src/lib/db.ts`, `prisma/` | Prisma + SQLite (`prisma/dev.db`). `db.ts` is the `PrismaClient` singleton (Node-only). Schema + migrations committed; the data file is gitignored. |
 | **API routes** | `src/app/api/*` | `login`, `logout`, `list`, `signed-url`, `connection` — JSON endpoints, each re-checking auth. |
 | **Pages** | `src/app/{login,browse,preview}` | Server components that render the UI. `browse` and `preview` read S3 directly server-side. `browse` shows a connection form when none is configured. |
 | **UI components** | `src/components/*` | `Breadcrumb`, `FileRow`, `ImagePreview`, `PdfPreview`, `JsonPreview`, `LogoutButton`, `ConnectionForm`, `BucketSwitcher`. |

@@ -1,26 +1,26 @@
 // Server-only (Node.js runtime). Resolves the "active" S3 connection — the bucket +
-// credentials the app should currently browse. Precedence: an encrypted httpOnly
-// cookie (runtime-entered connections) overrides the env-provided default.
+// credentials the app should currently browse. Connections live in a local SQLite DB
+// (Prisma); the secret access key is stored AES-256-GCM encrypted, never in plaintext.
 //
-// Do NOT import this from middleware (Edge runtime) — it uses Node's `crypto` and the
-// async cookie store.
-import { cookies } from "next/headers";
+// Do NOT import this from middleware (Edge runtime) — it uses Node `crypto` and Prisma.
 import {
   createCipheriv,
   createDecipheriv,
   randomBytes,
-  randomUUID,
   scryptSync,
 } from "crypto";
-import { getAppSecret, COOKIE_SECURE } from "./auth";
-
-export const CONNECTION_COOKIE = "s3v_conn";
+import type { AppSettings } from "@prisma/client";
+import { getAppSecret } from "./auth";
+import { prisma } from "./db";
 
 // Implicit, non-removable id for the connection built from environment variables.
 export const ENV_CONNECTION_ID = "env";
 
-// Keep the encrypted cookie comfortably under the ~4KB browser limit.
+// Cap on saved (non-env) connections.
 export const MAX_SAVED_CONNECTIONS = 10;
+
+// Single global settings row.
+const SETTINGS_ID = "global";
 
 export interface S3Connection {
   id: string;
@@ -29,18 +29,6 @@ export interface S3Connection {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
-}
-
-export interface ConnectionStore {
-  activeId: string;
-  items: S3Connection[];
-  // When set, overrides the env-default connection's fields (wins over .env.local
-  // until reset). Lets the "default" bucket be edited like any other.
-  envOverride?: Omit<S3Connection, "id">;
-  // When true, the env-default bucket is hidden (the user deleted it). It otherwise
-  // regenerates from the env vars on every request; this persists the deletion.
-  // Restorable while the env vars remain set.
-  envHidden?: boolean;
 }
 
 /** A connection safe to send to the client — never includes the secret key. */
@@ -84,15 +72,10 @@ export function hasEnvConnection(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Encryption — AES-256-GCM with a key derived from APP_SECRET.
-// Payload format: base64( iv(12) | authTag(16) | ciphertext ).
+// Encryption — AES-256-GCM with a scrypt key derived from APP_SECRET.
+// Payload format: base64( iv(12) | authTag(16) | ciphertext ). Used for the
+// stored secret access key and the env-override blob.
 // ---------------------------------------------------------------------------
-
-// Derive the 32-byte AES key from APP_SECRET via scrypt (a slow KDF), so even a
-// short/weak secret yields a strong key — stretching makes offline brute force
-// expensive. Memoized: scrypt is deliberately CPU-heavy, and the secret is constant
-// per process, so derive once. (Changing the salt invalidates existing s3v_conn
-// cookies — they simply fail to decrypt and fall back to the env default.)
 let cachedKey: Buffer | null = null;
 function encryptionKey(): Buffer {
   if (!cachedKey) {
@@ -104,10 +87,7 @@ function encryptionKey(): Buffer {
 export function encrypt(plaintext: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(plaintext, "utf8"),
-    cipher.final(),
-  ]);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, ciphertext]).toString("base64");
 }
@@ -120,123 +100,120 @@ export function decrypt(payload: string): string | null {
     const ciphertext = raw.subarray(28);
     const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
     decipher.setAuthTag(tag);
-    const plaintext = Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]);
-    return plaintext.toString("utf8");
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
-    // Tampered, wrong key (rotated APP_SECRET), or malformed — treat as no store.
+    // Tampered, wrong key (rotated APP_SECRET), or malformed.
     return null;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Cookie-backed connection store (read here; writes happen in route handlers)
+// Settings (global singleton) + DB-row helpers
 // ---------------------------------------------------------------------------
+const DEFAULT_SETTINGS: AppSettings = {
+  id: SETTINGS_ID,
+  activeConnectionId: null,
+  envHidden: false,
+  envOverrideJson: null,
+};
 
-/** Read & decrypt the saved connection store, or null if absent/invalid. */
-export async function readStore(): Promise<ConnectionStore | null> {
-  const store = await cookies();
-  const raw = store.get(CONNECTION_COOKIE)?.value;
-  if (!raw) return null;
+/** Read the global settings row (defaults if it doesn't exist yet) — no write. */
+async function readSettings(): Promise<AppSettings> {
+  return (await prisma.appSettings.findUnique({ where: { id: SETTINGS_ID } })) ?? DEFAULT_SETTINGS;
+}
 
-  const json = decrypt(raw);
+type EnvOverride = Omit<S3Connection, "id">;
+
+function readEnvOverride(settings: AppSettings): EnvOverride | null {
+  if (!settings.envOverrideJson) return null;
+  const json = decrypt(settings.envOverrideJson);
   if (!json) return null;
-
   try {
-    const parsed = JSON.parse(json) as ConnectionStore;
-    if (!parsed || !Array.isArray(parsed.items)) return null;
-    return parsed;
+    return JSON.parse(json) as EnvOverride;
   } catch {
     return null;
   }
 }
 
-/** Encrypt and persist the store to the httpOnly cookie. Route handlers only. */
-export async function writeStore(store: ConnectionStore): Promise<void> {
-  const c = await cookies();
-  c.set(CONNECTION_COOKIE, encrypt(JSON.stringify(store)), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: COOKIE_SECURE,
-  });
+type ConnRow = {
+  id: string;
+  label: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretEnc: string;
+};
+
+function rowToConnection(row: ConnRow): S3Connection {
+  return {
+    id: row.id,
+    label: row.label,
+    region: row.region,
+    bucket: row.bucket,
+    accessKeyId: row.accessKeyId,
+    secretAccessKey: decrypt(row.secretEnc) ?? "",
+  };
 }
 
-/** Remove the saved-connection cookie (reverts to env default / unconfigured). */
-export async function clearStore(): Promise<void> {
-  const c = await cookies();
-  c.set(CONNECTION_COOKIE, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: COOKIE_SECURE,
-    maxAge: 0,
-  });
+/** The env-default connection, with any saved override applied — or null if hidden/unset. */
+function resolveEnvConnection(settings: AppSettings): S3Connection | null {
+  if (settings.envHidden) return null;
+  const override = readEnvOverride(settings);
+  if (override) return { id: ENV_CONNECTION_ID, ...override };
+  return envConnection();
 }
 
-/**
- * Add a new runtime connection, make it active, and persist. Returns the saved item.
- * Throws if the saved-connection limit is reached.
- */
-export async function addConnection(
-  input: Omit<S3Connection, "id">
-): Promise<S3Connection> {
-  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
-  if (store.items.length >= MAX_SAVED_CONNECTIONS) {
+// ---------------------------------------------------------------------------
+// Public API (same names as before — callers unchanged)
+// ---------------------------------------------------------------------------
+
+/** Add a new connection, make it active, and persist. Returns the saved item. */
+export async function addConnection(input: Omit<S3Connection, "id">): Promise<S3Connection> {
+  if ((await prisma.connection.count()) >= MAX_SAVED_CONNECTIONS) {
     throw new Error(
       `You can save at most ${MAX_SAVED_CONNECTIONS} connections. Remove one first.`
     );
   }
-  const item: S3Connection = { ...input, id: randomUUID() };
-  store.items.push(item);
-  store.activeId = item.id;
-  await writeStore(store);
-  return item;
-}
-
-/** The env-default connection, with any saved override applied over the env vars. */
-function resolveEnvConnection(store: ConnectionStore | null): S3Connection | null {
-  // Deleted by the user — stays hidden until restored, even though the env vars exist.
-  if (store?.envHidden) return null;
-  if (store?.envOverride) {
-    return { id: ENV_CONNECTION_ID, ...store.envOverride };
-  }
-  return envConnection();
+  const row = await prisma.connection.create({
+    data: {
+      label: input.label,
+      region: input.region,
+      bucket: input.bucket,
+      accessKeyId: input.accessKeyId,
+      secretEnc: encrypt(input.secretAccessKey),
+    },
+  });
+  await prisma.appSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, activeConnectionId: row.id },
+    update: { activeConnectionId: row.id },
+  });
+  return rowToConnection(row);
 }
 
 /** The id that actually resolves as active (mirrors getActiveConnection's precedence). */
-async function effectiveActiveId(): Promise<string | null> {
-  const store = await readStore();
-  if (store) {
-    if (store.activeId === ENV_CONNECTION_ID && resolveEnvConnection(store)) {
-      return ENV_CONNECTION_ID;
-    }
-    if (store.items.some((c) => c.id === store.activeId)) {
-      return store.activeId;
-    }
+async function effectiveActiveId(settings: AppSettings): Promise<string | null> {
+  if (settings.activeConnectionId === ENV_CONNECTION_ID && resolveEnvConnection(settings)) {
+    return ENV_CONNECTION_ID;
   }
-  return resolveEnvConnection(store) ? ENV_CONNECTION_ID : null;
+  if (settings.activeConnectionId && settings.activeConnectionId !== ENV_CONNECTION_ID) {
+    const exists = await prisma.connection.findUnique({
+      where: { id: settings.activeConnectionId },
+      select: { id: true },
+    });
+    if (exists) return settings.activeConnectionId;
+  }
+  return resolveEnvConnection(settings) ? ENV_CONNECTION_ID : null;
 }
 
-/**
- * Resolve the active connection. Precedence: the store's active item (if the cookie
- * exists and points at a valid runtime item), else the env default (with override
- * applied), else null.
- */
+/** Resolve the active connection: the active saved row, else the env default, else null. */
 export async function getActiveConnection(): Promise<S3Connection | null> {
-  const store = await readStore();
-
-  if (store) {
-    if (store.activeId === ENV_CONNECTION_ID) {
-      return resolveEnvConnection(store);
-    }
-    const active = store.items.find((c) => c.id === store.activeId);
-    if (active) return active;
+  const settings = await readSettings();
+  if (settings.activeConnectionId && settings.activeConnectionId !== ENV_CONNECTION_ID) {
+    const row = await prisma.connection.findUnique({ where: { id: settings.activeConnectionId } });
+    if (row) return rowToConnection(row);
   }
-
-  return resolveEnvConnection(store);
+  return resolveEnvConnection(settings);
 }
 
 function sanitize(
@@ -258,100 +235,129 @@ function sanitize(
 
 /** Sanitized list for the client: env default (if any) first, then saved items. */
 export async function listConnections(): Promise<SanitizedConnection[]> {
-  const store = await readStore();
-  const env = resolveEnvConnection(store);
-  const activeId = await effectiveActiveId();
+  const settings = await readSettings();
+  const env = resolveEnvConnection(settings);
+  const activeId = await effectiveActiveId(settings);
+  const rows = await prisma.connection.findMany({ orderBy: { createdAt: "asc" } });
 
   const out: SanitizedConnection[] = [];
-  if (env) out.push(sanitize(env, env.id === activeId, !!store?.envOverride));
-  if (store) {
-    for (const item of store.items) out.push(sanitize(item, item.id === activeId));
-  }
+  if (env) out.push(sanitize(env, env.id === activeId, !!readEnvOverride(settings)));
+  for (const row of rows) out.push(sanitize(rowToConnection(row), row.id === activeId));
   return out;
 }
 
 /** Make an existing connection (env or saved) the active one. */
 export async function setActiveConnection(id: string): Promise<void> {
-  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
   if (id === ENV_CONNECTION_ID) {
-    // The env default exists (and is restorable) whenever the env vars are set —
-    // activating it also un-hides it if it had been deleted.
     if (!hasEnvConnection()) throw new Error("Unknown connection.");
-    store.envHidden = false;
-  } else if (!store.items.some((c) => c.id === id)) {
-    throw new Error("Unknown connection.");
+    // Activating the env default also un-hides it if it had been deleted.
+    await prisma.appSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, activeConnectionId: ENV_CONNECTION_ID, envHidden: false },
+      update: { activeConnectionId: ENV_CONNECTION_ID, envHidden: false },
+    });
+    return;
   }
-  store.activeId = id;
-  await writeStore(store);
+  const row = await prisma.connection.findUnique({ where: { id }, select: { id: true } });
+  if (!row) throw new Error("Unknown connection.");
+  await prisma.appSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, activeConnectionId: id },
+    update: { activeConnectionId: id },
+  });
 }
 
 /** True when the env default is configured but currently hidden (deleted) — restorable. */
 export async function canRestoreEnvDefault(): Promise<boolean> {
-  return hasEnvConnection() && !!(await readStore())?.envHidden;
+  if (!hasEnvConnection()) return false;
+  return (await readSettings()).envHidden;
 }
 
-/**
- * Raw connection (incl. secret) for server-side use. For the env default this is the
- * resolved connection (override applied over env vars). Null if it doesn't exist.
- */
+/** Raw connection (incl. secret) for server-side use. Null if it doesn't exist. */
 export async function getStoredConnection(id: string): Promise<S3Connection | null> {
-  const store = await readStore();
-  if (id === ENV_CONNECTION_ID) return resolveEnvConnection(store);
-  return store?.items.find((c) => c.id === id) ?? null;
+  if (id === ENV_CONNECTION_ID) return resolveEnvConnection(await readSettings());
+  const row = await prisma.connection.findUnique({ where: { id } });
+  return row ? rowToConnection(row) : null;
 }
 
 /**
  * Update a connection's fields and persist; active stays put. For the env default the
- * change is stored as an override that wins over .env.local until reset.
+ * change is stored as an (encrypted) override that wins over the env vars until reset.
  */
 export async function updateConnection(
   id: string,
   fields: Partial<Omit<S3Connection, "id">>
 ): Promise<void> {
-  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
-
   if (id === ENV_CONNECTION_ID) {
-    const base = resolveEnvConnection(store);
-    store.envOverride = {
+    const settings = await readSettings();
+    const base = resolveEnvConnection(settings) ?? envConnection();
+    const override: EnvOverride = {
       label: fields.label ?? base?.label ?? "",
       region: fields.region ?? base?.region ?? "",
       bucket: fields.bucket ?? base?.bucket ?? "",
       accessKeyId: fields.accessKeyId ?? base?.accessKeyId ?? "",
       secretAccessKey: fields.secretAccessKey ?? base?.secretAccessKey ?? "",
     };
-    await writeStore(store);
+    const envOverrideJson = encrypt(JSON.stringify(override));
+    await prisma.appSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, envOverrideJson },
+      update: { envOverrideJson },
+    });
     return;
   }
 
-  const item = store.items.find((c) => c.id === id);
-  if (!item) throw new Error("Unknown connection.");
-  Object.assign(item, fields);
-  await writeStore(store);
+  const row = await prisma.connection.findUnique({ where: { id }, select: { id: true } });
+  if (!row) throw new Error("Unknown connection.");
+  await prisma.connection.update({
+    where: { id },
+    data: {
+      ...(fields.label !== undefined ? { label: fields.label } : {}),
+      ...(fields.region !== undefined ? { region: fields.region } : {}),
+      ...(fields.bucket !== undefined ? { bucket: fields.bucket } : {}),
+      ...(fields.accessKeyId !== undefined ? { accessKeyId: fields.accessKeyId } : {}),
+      ...(fields.secretAccessKey !== undefined
+        ? { secretEnc: encrypt(fields.secretAccessKey) }
+        : {}),
+    },
+  });
 }
 
 /**
- * Remove a connection. For a saved bucket this drops it from the list; for the env
- * default it persistently hides it (it would otherwise regenerate from the env vars) —
- * restorable later while the env vars remain set. Re-points active if needed.
+ * Remove a connection. A saved bucket is deleted; the env default is persistently hidden
+ * (it would otherwise regenerate from the env vars) — restorable while the env vars remain
+ * set. Re-points the active connection if the removed one was active.
  */
 export async function removeConnection(id: string): Promise<void> {
-  const store = (await readStore()) ?? { activeId: ENV_CONNECTION_ID, items: [] };
+  const settings = await readSettings();
 
   if (id === ENV_CONNECTION_ID) {
-    store.envHidden = true;
-    delete store.envOverride; // drop any customization too
-    if (store.activeId === ENV_CONNECTION_ID) {
-      store.activeId = store.items[0]?.id ?? ENV_CONNECTION_ID; // env now resolves null
+    let activeConnectionId = settings.activeConnectionId;
+    if (activeConnectionId === ENV_CONNECTION_ID) {
+      const first = await prisma.connection.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+      activeConnectionId = first?.id ?? null;
     }
-    await writeStore(store);
+    await prisma.appSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, envHidden: true, activeConnectionId },
+      update: { envHidden: true, envOverrideJson: null, activeConnectionId },
+    });
     return;
   }
 
-  store.items = store.items.filter((c) => c.id !== id);
-  if (store.activeId === id) {
-    store.activeId = resolveEnvConnection(store)
-      ? ENV_CONNECTION_ID
-      : store.items[0]?.id ?? ENV_CONNECTION_ID;
+  await prisma.connection.delete({ where: { id } }).catch(() => {});
+  if (settings.activeConnectionId === id) {
+    let activeConnectionId: string | null;
+    if (resolveEnvConnection(settings)) {
+      activeConnectionId = ENV_CONNECTION_ID;
+    } else {
+      const first = await prisma.connection.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+      activeConnectionId = first?.id ?? null;
+    }
+    await prisma.appSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, activeConnectionId },
+      update: { activeConnectionId },
+    });
   }
-  await writeStore(store);
 }
