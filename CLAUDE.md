@@ -51,8 +51,9 @@ Copy `.env.example` to `.env.local`:
 
 ```
 APP_PASSWORD=   # REQUIRED — password users enter at /login
-APP_SECRET=     # REQUIRED — strong random string (>=16 chars; `openssl rand -hex 32`)
-                #            secures the auth cookie AND encrypts saved S3 credentials
+APP_SECRET=     # REQUIRED — >24 chars with >=4 digits and >=4 special characters
+                #            (a long passphrase, NOT `openssl rand -hex` which has no
+                #            symbols); secures the auth cookie AND encrypts saved S3 creds
 AWS_ACCESS_KEY_ID=      # OPTIONAL — default S3 connection (see below)
 AWS_SECRET_ACCESS_KEY=  # OPTIONAL
 AWS_REGION=             # OPTIONAL
@@ -71,7 +72,7 @@ switch buckets anytime via the switcher). Partial AWS config counts as no defaul
 - All routes (except `/login` and `/api/login`) are protected by the middleware in `src/proxy.ts` (Next.js 16's `proxy.ts` is the middleware file — it shows as `ƒ Proxy (Middleware)` in the build).
 - The auth check (`isAuthedRequest`, used in middleware and API routes; `isAuthed`, used in server components) is **async** and compares the cookie against `authToken()`, hashed via **Web Crypto** (`crypto.subtle`) so the same code runs in Edge and Node. `lib/auth.server.ts` holds only the Node-only `verifyPassword()`.
 - Cookies are set `Secure` in all environments (`COOKIE_SECURE` in `lib/auth.ts`); `httpOnly` + `sameSite=lax`.
-- `getAppSecret()` (in `lib/auth.ts`) throws if `APP_SECRET` is unset — it underpins both the auth token and credential encryption (warns if shorter than 16 chars).
+- `getAppSecret()` (in `lib/auth.ts`) underpins both the auth token and credential encryption, so it enforces a policy: **throws unless `APP_SECRET` is >24 chars with ≥4 digits and ≥4 special characters** (validated once per process). A non-compliant secret breaks every request until fixed.
 
 ## S3 Connections
 

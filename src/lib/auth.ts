@@ -12,26 +12,41 @@ export const COOKIE_SECURE = process.env.NODE_ENV === "production";
 
 // ---------------------------------------------------------------------------
 // APP_SECRET underpins both the auth cookie and the AES encryption of saved S3
-// credentials, so a missing/weak value is a real risk — fail loudly instead of
-// silently falling back. Edge-safe: just an env read, no Node crypto.
+// credentials, so it must be strong. Policy: longer than 24 characters, with at
+// least 4 digits and at least 4 special (non-alphanumeric) characters. The app
+// refuses to run otherwise. Edge-safe: pure string checks, no Node crypto.
+//
+// Note: random hex/base64 won't reliably contain special characters — use a long
+// passphrase that mixes letters, digits, and symbols.
 // ---------------------------------------------------------------------------
-let warnedWeakSecret = false;
+const MIN_LENGTH = 24; // must be GREATER than this (i.e. 25+)
+const MIN_DIGITS = 4;
+const MIN_SPECIALS = 4;
+
+const POLICY = `APP_SECRET must be more than ${MIN_LENGTH} characters and contain at least ${MIN_DIGITS} digits and ${MIN_SPECIALS} special characters (e.g. a long passphrase like "Tr0ub4dour&3-Horse$Battery!Staple").`;
+
+let validatedSecret: string | null = null;
 
 export function getAppSecret(): string {
+  if (validatedSecret) return validatedSecret;
+
   const secret = process.env.APP_SECRET;
   if (!secret) {
-    throw new Error(
-      "APP_SECRET must be set. It secures the auth cookie and encrypts saved S3 " +
-        "credentials. Generate one with: openssl rand -hex 32"
-    );
+    throw new Error(`APP_SECRET must be set. ${POLICY}`);
   }
-  if (secret.length < 16 && !warnedWeakSecret) {
-    warnedWeakSecret = true;
-    console.warn(
-      "[auth] APP_SECRET is short (<16 chars). It secures the auth cookie and " +
-        "encrypts saved S3 credentials — consider a stronger value: openssl rand -hex 32"
-    );
+
+  const digits = (secret.match(/[0-9]/g) ?? []).length;
+  const specials = (secret.match(/[^A-Za-z0-9]/g) ?? []).length;
+  const unmet: string[] = [];
+  if (secret.length <= MIN_LENGTH) unmet.push(`be longer than ${MIN_LENGTH} characters (got ${secret.length})`);
+  if (digits < MIN_DIGITS) unmet.push(`have at least ${MIN_DIGITS} digits (got ${digits})`);
+  if (specials < MIN_SPECIALS) unmet.push(`have at least ${MIN_SPECIALS} special characters (got ${specials})`);
+
+  if (unmet.length > 0) {
+    throw new Error(`APP_SECRET does not meet the security policy — it must ${unmet.join("; ")}. ${POLICY}`);
   }
+
+  validatedSecret = secret; // memoize: validate once per process
   return secret;
 }
 
