@@ -50,7 +50,7 @@ prisma/
 Copy `.env.example` to `.env.local`:
 
 ```
-APP_PASSWORD=   # REQUIRED — password users enter at /login
+APP_PASSWORD=   # REQUIRED — password users enter at /login; >=8 chars, with >=1 number and >=1 letter
 APP_SECRET=     # REQUIRED — >24 chars with >=4 digits and >=4 special characters
                 #            (a long passphrase, NOT `openssl rand -hex` which has no
                 #            symbols); secures the auth cookie AND encrypts saved S3 creds
