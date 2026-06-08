@@ -9,6 +9,11 @@
             "type": "command",
             "command": "python3 -c \"import json,sys,re; d=json.load(sys.stdin); fp=d.get('tool_input',{}).get('file_path',''); re.search(r'(^|/)\\.env(\\.[^/]*)?$',fp) and print('{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\".env files are blocked from being read by Claude\\\"}}')\"",
             "statusMessage": "Checking file access..."
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-db.py\"",
+            "statusMessage": "Checking DB file access..."
           }
         ]
       },
@@ -19,6 +24,11 @@
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-env-bash.py\"",
             "statusMessage": "Checking command for .env access..."
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-db.py\"",
+            "statusMessage": "Checking command for DB access..."
           }
         ]
       }
