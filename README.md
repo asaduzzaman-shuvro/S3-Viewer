@@ -54,7 +54,11 @@ Copy the example env file and fill it in:
 cp .env.example .env.local
 ```
 
-**Required — the app won't run without these two:**
+> [!IMPORTANT]
+> **Two variables are mandatory — the app will not start without them:
+> `APP_PASSWORD` and `APP_SECRET`.** Everything else is optional.
+
+**Required:**
 
 | Variable       | Purpose |
 |----------------|---------|
