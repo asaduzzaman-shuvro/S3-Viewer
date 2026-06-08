@@ -32,7 +32,7 @@ Tracing `GET /browse/photos/2024` from URL to rendered page:
 
 ```
 Browser
-  │  GET /browse/photos/2024   (cookie: s3v_auth=<APP_SECRET>)
+  │  GET /browse/photos/2024   (cookie: s3v_auth=<authToken>)
   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Edge middleware — src/proxy.ts                            │

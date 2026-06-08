@@ -6,11 +6,11 @@ client components or Edge middleware will fail.
 
 As of the runtime-connection feature, this module no longer reads env vars or holds a
 singleton. Instead it builds a **per-connection** client (cached by credentials) and
-its functions take an `S3Connection` resolved by `src/lib/connection.ts` (env default
-or an encrypted-cookie connection). See `docs/architecture.md` for the resolver.
+its functions take an `S3Connection` resolved by `src/lib/connection.ts` (the env default
+or a connection saved in the SQLite DB). See `docs/architecture.md` for the resolver.
 
 ```ts
-import { listPrefix, presignGet, validateConnection, contentTypeFromKey } from "@/lib/s3";
+import { listPrefix, presignGet, getObjectText, validateConnection, contentTypeFromKey } from "@/lib/s3";
 import { getActiveConnection } from "@/lib/connection";
 ```
 
@@ -149,6 +149,24 @@ await validateConnection({ region, bucket, accessKeyId, secretAccessKey, id, lab
 
 ---
 
+## `getObjectText(conn, key)`
+
+Read an object's body as text, **server-side** (`GetObjectCommand` →
+`Body.transformToString()`). Used for JSON/text previews so the browser doesn't fetch the
+presigned URL directly — a cross-origin browser fetch to S3 would require the bucket to
+have a CORS policy, whereas a server-side read does not. Throws on S3 errors; the caller
+decides how to surface them.
+
+**Parameters:** `conn` (`S3Connection`), `key` (`string`).
+**Returns:** `Promise<string>` — the object's UTF-8 contents.
+
+```ts
+const json = await getObjectText(conn, "config/settings.json");
+// preview page passes this text to <JsonPreview text={...} />
+```
+
+---
+
 ## `contentTypeFromKey(key)`
 
 Map a key's file extension to a MIME type.
@@ -194,4 +212,5 @@ contentTypeFromKey("data.parquet"); // "application/octet-stream"
 - `src/app/browse/[[...path]]/page.tsx` — calls `listPrefix()` directly.
 - `src/app/api/list/route.ts` — wraps `listPrefix()` as JSON.
 - `src/app/api/signed-url/route.ts` — calls `presignGet()` and `contentTypeFromKey()`.
-- `src/app/preview/[...key]/page.tsx` — presigns the object for inline preview.
+- `src/app/preview/[...key]/page.tsx` — presigns the object for inline preview, and uses `getObjectText()` to load JSON server-side.
+- `src/app/api/connection/route.ts` — calls `validateConnection()` before saving.
