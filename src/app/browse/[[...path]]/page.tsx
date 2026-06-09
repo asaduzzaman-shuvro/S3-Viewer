@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { isAuthed } from "@/lib/auth";
-import { getActiveConnection, listConnections, canRestoreEnvDefault } from "@/lib/connection";
+import {
+  getActiveConnection,
+  listConnections,
+  canRestoreEnvDefault,
+  hasUndecryptableSecret,
+} from "@/lib/connection";
 import { listPrefix } from "@/lib/s3";
 import Breadcrumb from "@/components/Breadcrumb";
 import FileRow from "@/components/FileRow";
@@ -35,6 +40,38 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
           </p>
           <ConnectionForm submitLabel="Connect & open" />
           {canRestore && <RestoreDefaultButton />}
+        </div>
+      </main>
+    );
+  }
+
+  // The active connection's saved secret can't be decrypted (APP_SECRET changed since
+  // it was saved). Don't hit S3 with an empty secret — that just yields an opaque
+  // SignatureDoesNotMatch. Prompt to re-enter the secret, which re-encrypts it under
+  // the current APP_SECRET (edit mode → PUT, keeping bucket/region/key).
+  if (hasUndecryptableSecret(conn)) {
+    return (
+      <main className="auth-bg">
+        <div style={styles.connTopRight}>
+          <LogoutButton />
+        </div>
+        <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
+          <span style={styles.connEyebrow}>● credentials locked</span>
+          <h1 style={styles.connTitle}>Re-enter the secret for “{conn.label}”</h1>
+          <p style={styles.connSubtitle}>
+            This bucket&apos;s saved secret access key couldn&apos;t be unlocked — the
+            app secret (<code>APP_SECRET</code>) changed since it was saved. Re-enter the
+            secret access key to restore access; the other details are kept.
+          </p>
+          <ConnectionForm
+            connection={{
+              id: conn.id,
+              label: conn.label,
+              region: conn.region,
+              bucket: conn.bucket,
+            }}
+            submitLabel="Restore access"
+          />
         </div>
       </main>
     );

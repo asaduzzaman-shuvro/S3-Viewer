@@ -168,14 +168,28 @@ type ConnRow = {
 };
 
 function rowToConnection(row: ConnRow): S3Connection {
+  const secretAccessKey = decrypt(row.secretEnc) ?? "";
+  if (!secretAccessKey) {
+    // Decrypt failed (wrong key / tampered). Almost always means APP_SECRET changed
+    // since this connection was saved, so its secret can no longer be unlocked.
+    console.warn(
+      `[connection] secret for "${row.label}" (${row.id}) could not be decrypted — ` +
+        `APP_SECRET likely changed since it was saved. Re-enter this connection's secret.`
+    );
+  }
   return {
     id: row.id,
     label: row.label,
     region: row.region,
     bucket: row.bucket,
     accessKeyId: row.accessKeyId,
-    secretAccessKey: decrypt(row.secretEnc) ?? "",
+    secretAccessKey,
   };
+}
+
+/** True when a saved connection's stored secret can't be decrypted (e.g. APP_SECRET changed). */
+export function hasUndecryptableSecret(conn: S3Connection): boolean {
+  return conn.id !== ENV_CONNECTION_ID && conn.secretAccessKey === "";
 }
 
 /** The env-default connection, with any saved override applied — or null if hidden/unset. */
