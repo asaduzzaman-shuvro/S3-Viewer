@@ -12,8 +12,8 @@ inline — without exposing the bucket publicly.
   render directly in the browser using short-lived presigned URLs.
 - **Presigned access** — files are served through 5-minute presigned GET URLs;
   bucket credentials never reach the client.
-- **Password gate** — one shared password protects every page and API route, with
-  a constant-time comparison on login.
+- **Password gate** — one shared password protects every page and API route, with a
+  constant-time login check and per-client rate limiting against brute force.
 - **Dual runtime** — Edge middleware for the auth redirect, Node.js for S3 access.
 
 ## Tech stack
@@ -109,7 +109,9 @@ All scripts are defined in `package.json`:
   leaked cookie can't reveal the credential-encryption key. Every subsequent request is
   checked by the Edge middleware in `src/proxy.ts`, which redirects unauthenticated
   visitors to `/login`. The four API routes also re-check the cookie and return `401`
-  if it's missing or wrong.
+  if it's missing or wrong. Repeated failed logins are rate-limited per client
+  (in-memory lockout; `src/lib/rate-limit.ts`), and the cookie comparison is
+  constant-time.
 - **Listing.** `listPrefix()` in `src/lib/s3.ts` runs a single
   `ListObjectsV2Command` with `Delimiter: "/"`, so `CommonPrefixes` become folders
   and `Contents` become files — a one-level-deep view of the bucket.
@@ -134,7 +136,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full request flow and
 
 | Method & path              | Description |
 |----------------------------|-------------|
-| `POST /api/login`          | Validate `APP_PASSWORD`, set the auth cookie |
+| `POST /api/login`          | Validate `APP_PASSWORD`, set the auth cookie (`429` when rate-limited) |
 | `POST /api/logout`         | Clear the auth cookie |
 | `GET /api/list?prefix=`    | List folders & files at a prefix (JSON) |
 | `GET /api/signed-url?key=` | Return a presigned URL + content type for a key (JSON) |
@@ -167,11 +169,20 @@ prisma/
 
 ## Security notes
 
-- This is **single shared-password** auth — there are no user accounts, sessions,
-  or rate limiting. It's suitable for gating an internal tool, not for protecting
-  highly sensitive data.
-- The auth and credential cookies are `httpOnly`, `sameSite: lax`, and `Secure` in all
-  environments (`COOKIE_SECURE` in `src/lib/auth.ts`), so they're never sent over plain
-  HTTP. Note: serve over HTTPS (or `http://localhost`) or the cookies won't be set.
+- This is **single shared-password** auth — there are no user accounts or per-user
+  sessions. It's suitable for gating an internal tool, not for protecting highly
+  sensitive data. Login is **rate-limited per client** (in-memory lockout after
+  repeated failures; `src/lib/rate-limit.ts`), and both the password check and the
+  auth-cookie comparison run in constant time.
+- The `s3v_auth` cookie is `httpOnly`, `sameSite: lax`, and `Secure` **in production**
+  (`COOKIE_SECURE = NODE_ENV === "production"` in `src/lib/auth.ts`). Serve production
+  over HTTPS or the cookie won't be sent; local dev runs over `http://localhost` without
+  the Secure flag.
+- **Saved S3 credentials** live in the SQLite DB with the secret access key stored
+  **AES-256-GCM-encrypted** (scrypt key from `APP_SECRET` + a random per-record salt) —
+  never plaintext, never sent to the browser (the bucket switcher receives neither secret
+  keys nor access key IDs). Changing `APP_SECRET` makes existing saved secrets
+  undecryptable; the browse page detects this and prompts you to re-enter the secret,
+  which re-encrypts it under the new `APP_SECRET`.
 - `listPrefix()` issues a single `ListObjectsV2Command` with no pagination, so a
   prefix with more than 1,000 immediate children will be truncated.

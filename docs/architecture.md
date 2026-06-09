@@ -8,9 +8,10 @@ that runs across two runtimes: **Edge** (the auth middleware) and **Node.js**
 ## Overview
 
 The app does one thing: present an S3 bucket as a browsable, previewable file tree
-behind a password. There is no database — S3 *is* the data store. State that isn't
-in S3 lives in two environment-derived secrets (`APP_PASSWORD` for login,
-`APP_SECRET` for the auth cookie) and a single `s3v_auth` cookie on the client.
+behind a password. S3 holds the files; a small **SQLite DB** (via Prisma) holds saved
+bucket connections, with each connection's secret access key encrypted under
+`APP_SECRET`. Auth state is just a single `s3v_auth` cookie on the client, derived from
+`APP_SECRET`; `APP_PASSWORD` gates login.
 
 ## Components
 
@@ -20,7 +21,7 @@ in S3 lives in two environment-derived secrets (`APP_PASSWORD` for login,
 | **Edge-safe auth** | `src/lib/auth.ts` | Async `isAuthedRequest(req)` / `isAuthed()` compare the `s3v_auth` cookie to `authToken()` — a one-way `SHA-256(APP_SECRET + ":s3v-auth-v1")` hashed via Web Crypto, so it runs in both Edge and Node. No Node-`crypto` import. |
 | **Node-only auth** | `src/lib/auth.server.ts` | `verifyPassword()` — constant-time `timingSafeEqual` check, used only by the login route. |
 | **S3 access layer** | `src/lib/s3.ts` | Per-connection `S3Client` (cached by credentials), `listPrefix(conn,…)`, `presignGet(conn,…)`, `validateConnection()`, `contentTypeFromKey()`. The only module that talks to AWS. |
-| **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection` from the **SQLite DB** (a saved `Connection` row overrides the env default; `AppSettings` holds the active id + env hidden/override). Secrets stored AES-256-GCM-encrypted (`secretEnc`). Add/edit/activate/remove + sanitized list for the client. |
+| **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection` from the **SQLite DB** (a saved `Connection` row overrides the env default; `AppSettings` holds the active id + env hidden/override). Secret access key stored AES-256-GCM-encrypted with a random per-record scrypt salt (`secretEnc`); a decrypt failure (e.g. `APP_SECRET` changed) is surfaced by the browse page as a re-enter-secret prompt. Add/edit/activate/remove + a sanitized list for the client (no secret keys or access key IDs). |
 | **Database** | `src/lib/db.ts`, `prisma/` | Prisma + SQLite (`prisma/dev.db`). `db.ts` is the `PrismaClient` singleton (Node-only). Schema + migrations committed; the data file is gitignored. |
 | **API routes** | `src/app/api/*` | `login`, `logout`, `list`, `signed-url`, `connection` — JSON endpoints, each re-checking auth. |
 | **Pages** | `src/app/{login,browse,preview}` | Server components that render the UI. `browse` and `preview` read S3 directly server-side. `browse` shows a connection form when none is configured. |
@@ -112,6 +113,7 @@ a time.
   `SHA-256(APP_SECRET + ":s3v-auth-v1")` in the cookie and compares against that. Still
   stateless (no session store, no per-user identity), but a leaked cookie can't be
   turned back into `APP_SECRET` — which separately encrypts the saved S3 credentials.
+  The cookie comparison is constant-time (`src/lib/auth.ts`).
 - **S3 as the only backend.** No database, no caching layer. Every listing is a
   live `ListObjectsV2` call; every preview is a fresh presigned URL.
 - **Server-side rendering for browse/preview.** These pages read S3 on the server
@@ -136,6 +138,7 @@ them:
   `proxy`), and the build confirms it's active (`ƒ Proxy (Middleware)`). It is *not*
   inactive dead code. Page/route-level `isAuthed`/`isAuthedRequest` checks back it up
   as defense-in-depth.
-- **Single shared password.** No per-user identity, sessions, or rate limiting — the
-  auth cookie is a single derived token shared by everyone who knows `APP_PASSWORD`.
-  Suitable for gating an internal tool, not for protecting highly sensitive data.
+- **Single shared password.** No per-user identity or sessions — the auth cookie is a
+  single derived token shared by everyone who knows `APP_PASSWORD`. Login is
+  rate-limited per client (in-memory lockout, `src/lib/rate-limit.ts`), but this is
+  still suitable for gating an internal tool, not for protecting highly sensitive data.

@@ -71,7 +71,7 @@ switch buckets anytime via the switcher). Partial AWS config counts as no defaul
 - Password-only auth: `APP_PASSWORD` is checked on login; on success, the `s3v_auth` cookie is set to a one-way token (`authToken()` = `SHA-256(APP_SECRET + ":s3v-auth-v1")`), **not** `APP_SECRET` itself, so a leaked cookie can't reveal the credential-encryption key.
 - All routes (except `/login` and `/api/login`) are protected by the middleware in `src/proxy.ts` (Next.js 16's `proxy.ts` is the middleware file — it shows as `ƒ Proxy (Middleware)` in the build).
 - The auth check (`isAuthedRequest`, used in middleware and API routes; `isAuthed`, used in server components) is **async** and compares the cookie against `authToken()`, hashed via **Web Crypto** (`crypto.subtle`) so the same code runs in Edge and Node. `lib/auth.server.ts` holds only the Node-only `verifyPassword()`.
-- Cookies are set `Secure` in all environments (`COOKIE_SECURE` in `lib/auth.ts`); `httpOnly` + `sameSite=lax`.
+- The `s3v_auth` cookie is `httpOnly` + `sameSite=lax`, and `Secure` in production only (`COOKIE_SECURE = NODE_ENV === "production"` in `lib/auth.ts`) — serve production over HTTPS; dev runs on `http://localhost` without Secure. The cookie comparison is constant-time.
 - `getAppSecret()` (in `lib/auth.ts`) underpins both the auth token and credential encryption, so it enforces a policy: **throws unless `APP_SECRET` is >24 chars with ≥4 digits and ≥4 special characters** (validated once per process). A non-compliant secret breaks every request until fixed.
 
 ## S3 Connections
