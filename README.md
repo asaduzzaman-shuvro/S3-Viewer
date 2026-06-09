@@ -27,7 +27,12 @@ inline — without exposing the bucket publicly.
 | Database  | Prisma `6` + SQLite (`prisma/dev.db`) — stores saved S3 connections |
 | JSON view | `react-json-view-lite` `^2.5.0` |
 
-## Getting started
+## 🚀 Getting started
+
+> [!TIP]
+> **New here?** The whole setup is three steps: install deps
+> (`npm install` + `npx prisma migrate dev`), set the two required env vars
+> (`APP_PASSWORD` and `APP_SECRET`), then `npm run dev` → http://localhost:3000.
 
 ### Prerequisites
 
