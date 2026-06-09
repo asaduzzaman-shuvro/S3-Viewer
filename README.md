@@ -62,7 +62,7 @@ cp .env.example .env.local
 
 | Variable       | Purpose |
 |----------------|---------|
-| `APP_PASSWORD` | The password users type at `/login`. **At least 8 characters, with at least one number and one letter.** |
+| `APP_PASSWORD` | The password users type at `/login`. **At least 12 characters, with at least one uppercase letter, one lowercase letter, one number, and one special character.** |
 | `APP_SECRET`   | Signs the auth-cookie token **and** is the key that encrypts saved S3 credentials. **Must be more than 24 characters with at least 4 digits and 4 special characters** (a long passphrase — `openssl rand -hex` has no symbols and won't qualify). The app refuses to start until it's set and compliant. |
 
 **Optional — a default S3 bucket:**

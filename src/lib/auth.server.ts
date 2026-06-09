@@ -1,9 +1,10 @@
 // Server-only (Node.js runtime). Do NOT import this from middleware.
 import { timingSafeEqual, createHash } from "crypto";
 
-// APP_PASSWORD policy: at least 8 characters, with at least one number and one letter.
-const MIN_PASSWORD_LENGTH = 8;
-const PASSWORD_POLICY = `APP_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters and contain at least one number and one letter.`;
+// APP_PASSWORD policy: at least 12 characters, with at least one uppercase letter,
+// one lowercase letter, one number, and one special character.
+const MIN_PASSWORD_LENGTH = 12;
+const PASSWORD_POLICY = `APP_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character.`;
 
 let validatedPassword: string | null = null;
 
@@ -20,8 +21,10 @@ export function getAppPassword(): string {
   if (password.length < MIN_PASSWORD_LENGTH) {
     unmet.push(`be at least ${MIN_PASSWORD_LENGTH} characters (got ${password.length})`);
   }
+  if (!/[A-Z]/.test(password)) unmet.push("contain at least one uppercase letter");
+  if (!/[a-z]/.test(password)) unmet.push("contain at least one lowercase letter");
   if (!/[0-9]/.test(password)) unmet.push("contain at least one number");
-  if (!/[A-Za-z]/.test(password)) unmet.push("contain at least one letter");
+  if (!/[^A-Za-z0-9]/.test(password)) unmet.push("contain at least one special character");
 
   if (unmet.length > 0) {
     throw new Error(`APP_PASSWORD does not meet the password policy — it must ${unmet.join("; ")}. ${PASSWORD_POLICY}`);
