@@ -31,13 +31,16 @@ export interface S3Connection {
   secretAccessKey: string;
 }
 
-/** A connection safe to send to the client — never includes the secret key. */
+/**
+ * A connection safe to send to the client — never includes the secret key, and
+ * deliberately omits the access key ID too (the UI doesn't display or resubmit
+ * it, so there's no reason to expose the IAM principal to client JS).
+ */
 export interface SanitizedConnection {
   id: string;
   label: string;
   bucket: string;
   region: string;
-  accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
   // env-default only: true when an override is active (so the UI can offer "reset").
@@ -73,32 +76,52 @@ export function hasEnvConnection(): boolean {
 
 // ---------------------------------------------------------------------------
 // Encryption — AES-256-GCM with a scrypt key derived from APP_SECRET.
-// Payload format: base64( iv(12) | authTag(16) | ciphertext ). Used for the
-// stored secret access key and the env-override blob.
+// Each record carries its own random 16-byte scrypt salt, so the data key is
+// not a pure function of APP_SECRET (defeats precomputation and cross-deployment
+// key reuse). Format: "v2:" + base64( salt(16) | iv(12) | authTag(16) | ciphertext ).
+//
+// Legacy records (pre-v2) have no prefix and used a fixed salt; decrypt() still
+// reads them, and any re-save migrates them to v2.
 // ---------------------------------------------------------------------------
-let cachedKey: Buffer | null = null;
-function encryptionKey(): Buffer {
-  if (!cachedKey) {
-    cachedKey = scryptSync(getAppSecret(), "s3v-connection-store-v1", 32);
-  }
-  return cachedKey;
+const KEY_VERSION = "v2:";
+const LEGACY_SALT = "s3v-connection-store-v1";
+
+let legacyKeyCache: Buffer | null = null;
+function deriveKey(salt: Buffer | string): Buffer {
+  return scryptSync(getAppSecret(), salt, 32);
+}
+function legacyKey(): Buffer {
+  if (!legacyKeyCache) legacyKeyCache = deriveKey(LEGACY_SALT);
+  return legacyKeyCache;
 }
 
 export function encrypt(plaintext: string): string {
+  const salt = randomBytes(16);
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", deriveKey(salt), iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, ciphertext]).toString("base64");
+  return KEY_VERSION + Buffer.concat([salt, iv, tag, ciphertext]).toString("base64");
 }
 
 export function decrypt(payload: string): string | null {
   try {
+    if (payload.startsWith(KEY_VERSION)) {
+      const raw = Buffer.from(payload.slice(KEY_VERSION.length), "base64");
+      const salt = raw.subarray(0, 16);
+      const iv = raw.subarray(16, 28);
+      const tag = raw.subarray(28, 44);
+      const ciphertext = raw.subarray(44);
+      const decipher = createDecipheriv("aes-256-gcm", deriveKey(salt), iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    }
+    // Legacy format: base64( iv(12) | authTag(16) | ciphertext ), fixed-salt key.
     const raw = Buffer.from(payload, "base64");
     const iv = raw.subarray(0, 12);
     const tag = raw.subarray(12, 28);
     const ciphertext = raw.subarray(28);
-    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
+    const decipher = createDecipheriv("aes-256-gcm", legacyKey(), iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
@@ -216,8 +239,10 @@ export async function getActiveConnection(): Promise<S3Connection | null> {
   return resolveEnvConnection(settings);
 }
 
+// Accepts any connection-shaped value (env connection or a raw DB row) — only the
+// display fields are read, so the list path never has to decrypt the secret.
 function sanitize(
-  conn: S3Connection,
+  conn: { id: string; label: string; bucket: string; region: string },
   isActive: boolean,
   isOverridden = false
 ): SanitizedConnection {
@@ -226,7 +251,6 @@ function sanitize(
     label: conn.label,
     bucket: conn.bucket,
     region: conn.region,
-    accessKeyId: conn.accessKeyId,
     isEnv: conn.id === ENV_CONNECTION_ID,
     isActive,
     isOverridden,
@@ -242,7 +266,8 @@ export async function listConnections(): Promise<SanitizedConnection[]> {
 
   const out: SanitizedConnection[] = [];
   if (env) out.push(sanitize(env, env.id === activeId, !!readEnvOverride(settings)));
-  for (const row of rows) out.push(sanitize(rowToConnection(row), row.id === activeId));
+  // Sanitize straight from the row — no need to decrypt the secret just to list.
+  for (const row of rows) out.push(sanitize(row, row.id === activeId));
   return out;
 }
 

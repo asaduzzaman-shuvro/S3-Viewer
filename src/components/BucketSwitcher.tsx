@@ -9,7 +9,6 @@ export interface SwitcherConnection {
   label: string;
   bucket: string;
   region: string;
-  accessKeyId: string;
   isEnv: boolean;
   isActive: boolean;
   isOverridden: boolean;
@@ -148,7 +147,6 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
                       label: editing.label,
                       region: editing.region,
                       bucket: editing.bucket,
-                      accessKeyId: editing.accessKeyId,
                     }}
                     submitLabel="Save changes"
                     onSuccess={() => {

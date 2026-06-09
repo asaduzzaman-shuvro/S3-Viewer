@@ -69,12 +69,22 @@ export async function authToken(): Promise<string> {
   return sha256Hex(`${getAppSecret()}:s3v-auth-v1`);
 }
 
+// Constant-time string equality (Edge-safe, no Node crypto). The token length is
+// fixed and public, so an early length check leaks nothing; the loop never
+// short-circuits on content, so it doesn't leak how many characters matched.
+function timingSafeEqualStr(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // ---------------------------------------------------------------------------
 // Edge-safe auth check (works in the Edge middleware and Node routes).
 // ---------------------------------------------------------------------------
 export async function isAuthedRequest(req: NextRequest): Promise<boolean> {
   const cookie = req.cookies.get(AUTH_COOKIE)?.value;
-  return !!cookie && cookie === (await authToken());
+  return !!cookie && timingSafeEqualStr(cookie, await authToken());
 }
 
 // ---------------------------------------------------------------------------
@@ -83,5 +93,5 @@ export async function isAuthedRequest(req: NextRequest): Promise<boolean> {
 export async function isAuthed(): Promise<boolean> {
   const store = await cookies();
   const value = store.get(AUTH_COOKIE)?.value;
-  return !!value && value === (await authToken());
+  return !!value && timingSafeEqualStr(value, await authToken());
 }

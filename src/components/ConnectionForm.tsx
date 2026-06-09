@@ -3,13 +3,12 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-/** Existing connection being edited (never includes the secret key). */
+/** Existing connection being edited (never includes the secret or access key). */
 export interface EditableConnection {
   id: string;
   label: string;
   region: string;
   bucket: string;
-  accessKeyId: string;
 }
 
 interface ConnectionFormProps {

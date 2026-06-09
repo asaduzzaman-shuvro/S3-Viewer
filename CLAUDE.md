@@ -50,7 +50,7 @@ prisma/
 Copy `.env.example` to `.env.local`:
 
 ```
-APP_PASSWORD=   # REQUIRED — password users enter at /login; >=8 chars, with >=1 number and >=1 letter
+APP_PASSWORD=   # REQUIRED — password users enter at /login; >=12 chars, with >=1 uppercase, >=1 lowercase, >=1 number, >=1 special char
 APP_SECRET=     # REQUIRED — >24 chars with >=4 digits and >=4 special characters
                 #            (a long passphrase, NOT `openssl rand -hex` which has no
                 #            symbols); secures the auth cookie AND encrypts saved S3 creds
@@ -84,9 +84,10 @@ switch buckets anytime via the switcher). Partial AWS config counts as no defaul
   This is a **global/shared** store (no per-user scoping yet — that's a future addition
   once SSO provides identity, via a `userId` column).
 - Runtime connections are validated with a real `ListObjectsV2` call before saving. The
-  **secret access key is stored AES-256-GCM-encrypted** (scrypt key from `APP_SECRET`) in
-  the `secretEnc` column — never plaintext — and is never exposed to client JS (the
-  switcher receives a sanitized list with no secret keys).
+  **secret access key is stored AES-256-GCM-encrypted** (scrypt key from `APP_SECRET`
+  plus a random per-record salt) in the `secretEnc` column — never plaintext — and is
+  never exposed to client JS (the switcher receives a sanitized list with neither secret
+  keys nor access key IDs). Login is rate-limited per client (in-memory lockout).
 - **Security**: credentials entered at runtime are entrusted to the app — prefer
   **read-only / least-privilege IAM keys** (or temporary STS credentials).
 
