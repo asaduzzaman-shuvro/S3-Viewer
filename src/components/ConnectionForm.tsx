@@ -17,9 +17,16 @@ interface ConnectionFormProps {
   submitLabel?: string;
   /** When provided, the form edits this connection instead of adding a new one. */
   connection?: EditableConnection;
+  /**
+   * When the default success handler runs, navigate to the bucket root instead of
+   * refreshing in place. Use for connect/reconnect forms (a new/changed bucket won't
+   * have the current nested path); omit for same-bucket edits (e.g. re-entering a
+   * secret), where the existing path is still valid.
+   */
+  resetToRoot?: boolean;
 }
 
-export default function ConnectionForm({ onSuccess, submitLabel, connection }: ConnectionFormProps) {
+export default function ConnectionForm({ onSuccess, submitLabel, connection, resetToRoot }: ConnectionFormProps) {
   const router = useRouter();
   const isEdit = !!connection;
   // Only the label is pre-filled when editing; every other field stays blank and
@@ -60,7 +67,10 @@ export default function ConnectionForm({ onSuccess, submitLabel, connection }: C
     if (res.ok) {
       // Keep the button busy through the refresh/navigation.
       if (onSuccess) onSuccess();
-      else router.refresh();
+      else if (resetToRoot) {
+        router.push("/browse");
+        router.refresh();
+      } else router.refresh();
     } else {
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Could not connect. Check the details and try again.");

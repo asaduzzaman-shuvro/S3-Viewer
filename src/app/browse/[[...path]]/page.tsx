@@ -40,7 +40,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
             No bucket is configured. Enter credentials to start browsing — they&apos;re
             validated and stored encrypted, server-side only.
           </p>
-          <ConnectionForm submitLabel="Connect & open" />
+          <ConnectionForm submitLabel="Connect & open" resetToRoot />
           {canRestore && <RestoreDefaultButton />}
         </div>
       </main>
@@ -110,7 +110,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
             The active connection couldn&apos;t list this bucket — the credentials may be
             wrong or expired. Re-enter them to reconnect.
           </p>
-          <ConnectionForm submitLabel="Reconnect" />
+          <ConnectionForm submitLabel="Reconnect" resetToRoot />
         </div>
       </main>
     );

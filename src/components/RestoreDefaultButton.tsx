@@ -18,6 +18,8 @@ export default function RestoreDefaultButton() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: "env" }),
     });
+    // The newly-active bucket's root, not the stale path we may be on.
+    router.push("/browse");
     router.refresh();
   }
 

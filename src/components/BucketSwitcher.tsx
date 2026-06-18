@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ConnectionForm from "./ConnectionForm";
 
@@ -27,20 +27,38 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
   const [editing, setEditing] = useState<SwitcherConnection | null>(null);
   const [confirming, setConfirming] = useState<SwitcherConnection | null>(null);
   const [busy, setBusy] = useState(false);
+  // Which connection is being switched to (drives the in-row spinner during the PATCH).
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+  // isPending stays true through the navigation + re-fetch of the new bucket's listing,
+  // so the trigger can show a spinner for the whole switch, not just the PATCH call.
+  const [isPending, startTransition] = useTransition();
 
+  const switching = busy || isPending;
   const active = connections.find((c) => c.isActive);
 
+  // After the active bucket changes, the current (possibly nested) path no longer
+  // applies — a different bucket rarely has the same folders — so reset to the root
+  // listing instead of refreshing the stale path in place. Wrapped in a transition so
+  // isPending tracks until the new listing has actually loaded.
+  function goToRoot() {
+    setOpen(false);
+    startTransition(() => {
+      router.push("/browse");
+      router.refresh();
+    });
+  }
+
   async function activate(id: string) {
-    if (busy) return;
+    if (switching) return;
     setBusy(true);
+    setSwitchingId(id);
     await fetch("/api/connection", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    setOpen(false);
     setBusy(false);
-    router.refresh();
+    goToRoot();
   }
 
   async function remove(id: string) {
@@ -61,10 +79,18 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={isPending}
+        aria-busy={isPending}
       >
-        <span style={styles.triggerIcon}>🪣</span>
-        <span style={styles.triggerLabel}>{active?.label ?? "Select bucket"}</span>
-        <span style={styles.caret}>▾</span>
+        {isPending ? (
+          <span className="spinner" style={styles.triggerSpinner} aria-hidden="true" />
+        ) : (
+          <span style={styles.triggerIcon}>🪣</span>
+        )}
+        <span style={styles.triggerLabel}>
+          {isPending ? "Switching…" : active?.label ?? "Select bucket"}
+        </span>
+        {!isPending && <span style={styles.caret}>▾</span>}
       </button>
 
       {open && (
@@ -88,9 +114,17 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
                     type="button"
                     style={styles.rowMain}
                     onClick={() => !c.isActive && activate(c.id)}
-                    disabled={busy}
+                    disabled={switching}
                   >
-                    <span style={styles.check}>{c.isActive ? "●" : ""}</span>
+                    <span style={styles.check}>
+                      {switchingId === c.id && switching ? (
+                        <span className="spinner" style={styles.rowSpinner} aria-hidden="true" />
+                      ) : c.isActive ? (
+                        "●"
+                      ) : (
+                        ""
+                      )}
+                    </span>
                     <span style={styles.rowText}>
                       <span style={styles.rowLabel}>{c.label}</span>
                       <span style={styles.rowMeta}>
@@ -151,8 +185,7 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
                     submitLabel="Save changes"
                     onSuccess={() => {
                       setEditing(null);
-                      setOpen(false);
-                      router.refresh();
+                      goToRoot();
                     }}
                   />
                 </>
@@ -161,8 +194,7 @@ export default function BucketSwitcher({ connections, restorableDefault }: Bucke
                   submitLabel="Add & switch"
                   onSuccess={() => {
                     setAdding(false);
-                    setOpen(false);
-                    router.refresh();
+                    goToRoot();
                   }}
                 />
               ) : (
@@ -247,6 +279,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   triggerIcon: { fontSize: 14 },
+  triggerSpinner: { width: 13, height: 13 },
   triggerLabel: {
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -297,7 +330,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--foreground)",
     minWidth: 0,
   },
-  check: { width: 12, color: "var(--accent)", fontSize: 10 },
+  check: {
+    width: 12,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--accent)",
+    fontSize: 10,
+  },
+  rowSpinner: { width: 11, height: 11 },
   rowText: { display: "flex", flexDirection: "column", gap: 1, minWidth: 0 },
   rowLabel: {
     fontSize: 14,
