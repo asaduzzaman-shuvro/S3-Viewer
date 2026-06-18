@@ -385,7 +385,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     padding: 16,
-    background: "rgba(0, 0, 0, 0.5)",
+    background: "var(--overlay)",
   },
   modalCard: {
     width: "100%",
@@ -426,7 +426,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "9px 18px",
     fontSize: 14,
     fontWeight: 600,
-    color: "#fff",
+    color: "var(--danger-contrast)",
     background: "var(--danger)",
     border: "1px solid var(--danger)",
     borderRadius: 9,

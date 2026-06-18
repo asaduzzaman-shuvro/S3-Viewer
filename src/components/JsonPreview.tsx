@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { JsonView, allExpanded, defaultStyles } from "react-json-view-lite";
+import { useState, useSyncExternalStore } from "react";
+import { JsonView, allExpanded, defaultStyles, darkStyles } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 
 interface JsonPreviewProps {
@@ -11,11 +11,32 @@ interface JsonPreviewProps {
   text: string | null;
 }
 
+// The tree's own label/value colors come from the library's stylesheet, which
+// doesn't read our CSS variables — so track the app's resolved theme (the
+// data-theme attribute the toggle/pre-paint script set on <html>) and pick the
+// matching light/dark preset. A MutationObserver makes it react to manual switches
+// and live system changes alike.
+function useIsDarkTheme(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const observer = new MutationObserver(onChange);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"],
+      });
+      return () => observer.disconnect();
+    },
+    () => document.documentElement.dataset.theme === "dark",
+    () => false,
+  );
+}
+
 export default function JsonPreview({ url, fileName, text }: JsonPreviewProps) {
   const [viewMode, setViewMode] = useState<"tree" | "raw">("tree");
+  const dark = useIsDarkTheme();
 
   if (text === null) {
-    return <p style={{ ...styles.msg, color: "#d32f2f" }}>Couldn&apos;t load this JSON file.</p>;
+    return <p style={{ ...styles.msg, color: "var(--danger)" }}>Couldn&apos;t load this JSON file.</p>;
   }
 
   // Parse once for the tree view; fall back to raw-only if it isn't valid JSON.
@@ -34,24 +55,26 @@ export default function JsonPreview({ url, fileName, text }: JsonPreviewProps) {
         <div style={styles.tabs}>
           <button
             onClick={() => setViewMode("tree")}
+            className={`json-tab${viewMode === "tree" ? " json-tab-active" : ""}`}
             style={{ ...styles.tab, ...(viewMode === "tree" ? styles.tabActive : {}) }}
           >
             🌲 Tree
           </button>
           <button
             onClick={() => setViewMode("raw")}
+            className={`json-tab${viewMode === "raw" ? " json-tab-active" : ""}`}
             style={{ ...styles.tab, ...(viewMode === "raw" ? styles.tabActive : {}) }}
           >
             📄 Raw
           </button>
         </div>
-        <a href={url} download={fileName} style={styles.download} target="_blank" rel="noreferrer">
+        <a href={url} download={fileName} className="accent-link" style={styles.download} target="_blank" rel="noreferrer">
           ⬇ Download JSON
         </a>
       </div>
 
       {parseError && (
-        <p style={{ ...styles.msg, color: "#d32f2f" }}>
+        <p style={{ ...styles.msg, color: "var(--danger)" }}>
           This file isn&apos;t valid JSON — showing raw text.
         </p>
       )}
@@ -62,7 +85,7 @@ export default function JsonPreview({ url, fileName, text }: JsonPreviewProps) {
           <JsonView
             data={data}
             shouldExpandNode={allExpanded}
-            style={defaultStyles}
+            style={dark ? darkStyles : defaultStyles}
           />
         </div>
       )}
@@ -76,7 +99,7 @@ export default function JsonPreview({ url, fileName, text }: JsonPreviewProps) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  msg: { color: "#888", fontSize: 14 },
+  msg: { color: "var(--muted)", fontSize: 14 },
   wrapper: { display: "flex", flexDirection: "column", gap: 12 },
   toolbar: {
     display: "flex",
@@ -86,28 +109,29 @@ const styles: Record<string, React.CSSProperties> = {
   tabs: { display: "flex", gap: 4 },
   tab: {
     padding: "5px 12px",
-    fontSize: 13,
-    fontWeight: 500,
-    border: "1px solid #ddd",
-    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    border: "1px solid var(--border)",
+    borderRadius: 8,
     background: "transparent",
     cursor: "pointer",
-    color: "#555",
+    color: "var(--muted)",
+    fontFamily: "var(--font-geist-mono), monospace",
   },
   tabActive: {
-    background: "#0070f3",
-    color: "#fff",
-    border: "1px solid #0070f3",
+    background: "var(--accent)",
+    color: "var(--accent-contrast)",
+    border: "1px solid var(--accent)",
   },
   download: {
     fontSize: 13,
-    color: "#0070f3",
+    color: "var(--accent)",
     textDecoration: "none",
     fontWeight: 600,
   },
   treeContainer: {
-    background: "#fafafa",
-    border: "1px solid #e0e0e0",
+    background: "var(--code-bg)",
+    border: "1px solid var(--border)",
     borderRadius: 8,
     padding: "12px 16px",
     overflowX: "auto",
@@ -116,8 +140,8 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
   },
   raw: {
-    background: "#1e1e1e",
-    color: "#d4d4d4",
+    background: "var(--code-bg)",
+    color: "var(--code-fg)",
     padding: "16px",
     borderRadius: 8,
     fontSize: 12,
@@ -125,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     maxHeight: "75vh",
     margin: 0,
-    fontFamily: "monospace",
+    fontFamily: "var(--font-geist-mono), monospace",
     whiteSpace: "pre-wrap",
     wordBreak: "break-all",
   },

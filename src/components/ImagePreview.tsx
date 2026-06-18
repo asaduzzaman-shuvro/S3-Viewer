@@ -23,7 +23,7 @@ export default function ImagePreview({ url, fileName }: ImagePreviewProps) {
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}
       />
-      <a href={url} download={fileName} style={styles.download} target="_blank" rel="noreferrer">
+      <a href={url} download={fileName} className="accent-link" style={styles.download} target="_blank" rel="noreferrer">
         ⬇ Download image
       </a>
     </div>
@@ -37,19 +37,19 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 16,
   },
-  loading: { color: "#888", fontSize: 14 },
-  error: { color: "#d32f2f", fontSize: 14 },
+  loading: { color: "var(--muted)", fontSize: 14 },
+  error: { color: "var(--danger)", fontSize: 14 },
   img: {
     maxWidth: "100%",
     maxHeight: "80vh",
     objectFit: "contain",
     borderRadius: 8,
-    border: "1px solid #e0e0e0",
-    background: "#f9f9f9",
+    border: "1px solid var(--border)",
+    background: "var(--surface)",
   },
   download: {
     fontSize: 13,
-    color: "#0070f3",
+    color: "var(--accent)",
     textDecoration: "none",
     fontWeight: 600,
   },

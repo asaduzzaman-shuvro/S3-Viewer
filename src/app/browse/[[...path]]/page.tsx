@@ -13,6 +13,7 @@ import LogoutButton from "@/components/LogoutButton";
 import ConnectionForm from "@/components/ConnectionForm";
 import BucketSwitcher from "@/components/BucketSwitcher";
 import RestoreDefaultButton from "@/components/RestoreDefaultButton";
+import ThemeToggle from "@/components/ThemeToggle";
 
 interface BrowsePageProps {
   params: Promise<{ path?: string[] }>;
@@ -29,6 +30,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
     return (
       <main className="auth-bg">
         <div style={styles.connTopRight}>
+          <ThemeToggle />
           <LogoutButton />
         </div>
         <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
@@ -53,6 +55,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
     return (
       <main className="auth-bg">
         <div style={styles.connTopRight}>
+          <ThemeToggle />
           <LogoutButton />
         </div>
         <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
@@ -96,6 +99,10 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
   if (listError) {
     return (
       <main className="auth-bg">
+        <div style={styles.connTopRight}>
+          <ThemeToggle />
+          <LogoutButton />
+        </div>
         <div className="auth-card" style={{ maxWidth: 440, textAlign: "left" }}>
           <span style={styles.connEyebrow}>● connection error</span>
           <h1 style={styles.connTitle}>Couldn&apos;t reach “{conn.bucket}”</h1>
@@ -142,6 +149,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
           </div>
           <div style={styles.headerActions} className="browse-enter">
             <BucketSwitcher connections={connections} restorableDefault={restorableDefault} />
+            <ThemeToggle />
             <LogoutButton />
           </div>
         </header>
@@ -291,5 +299,8 @@ const styles: Record<string, React.CSSProperties> = {
     top: 20,
     right: 20,
     zIndex: 2,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
   },
 };

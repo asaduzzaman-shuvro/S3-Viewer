@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, FormEvent } from "react";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export default function LoginForm() {
   const [password, setPassword] = useState("");
@@ -46,6 +47,9 @@ export default function LoginForm() {
 
   return (
     <main className="auth-bg">
+      <div style={styles.topRight}>
+        <ThemeToggle />
+      </div>
       <div className="auth-card" style={styles.card}>
         <span className="auth-enter" style={{ ...styles.eyebrow, "--d": "60ms" } as React.CSSProperties}>
           ● Secure access
@@ -97,6 +101,12 @@ export default function LoginForm() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  topRight: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    zIndex: 2,
+  },
   card: {
     // layout/animation/shadow live in globals.css (.auth-card)
     fontFamily: "var(--font-geist-sans), system-ui, sans-serif",

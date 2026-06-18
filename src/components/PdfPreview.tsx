@@ -13,7 +13,7 @@ export default function PdfPreview({ url, fileName }: PdfPreviewProps) {
         title={fileName}
         style={styles.frame}
       />
-      <a href={url} download={fileName} style={styles.download} target="_blank" rel="noreferrer">
+      <a href={url} download={fileName} className="accent-link" style={styles.download} target="_blank" rel="noreferrer">
         ⬇ Download PDF
       </a>
     </div>
@@ -26,14 +26,14 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     width: "100%",
     minHeight: "75vh",
-    border: "1px solid #e0e0e0",
+    border: "1px solid var(--border)",
     borderRadius: 8,
-    background: "#f9f9f9",
+    background: "var(--surface)",
   },
   download: {
     alignSelf: "flex-start",
     fontSize: 13,
-    color: "#0070f3",
+    color: "var(--accent)",
     textDecoration: "none",
     fontWeight: 600,
   },

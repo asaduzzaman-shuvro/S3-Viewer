@@ -6,6 +6,7 @@ import { presignGet, contentTypeFromKey, getObjectText } from "@/lib/s3";
 import PdfPreview from "@/components/PdfPreview";
 import ImagePreview from "@/components/ImagePreview";
 import JsonPreview from "@/components/JsonPreview";
+import ThemeToggle from "@/components/ThemeToggle";
 
 interface PreviewPageProps {
   params: Promise<{ key: string[] }>;
@@ -61,51 +62,75 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
   }
 
   return (
-    <main style={styles.main}>
-      {/* Header */}
-      <div style={styles.header}>
-        <Link href={backHref(key)} style={styles.back}>
-          ← Back
-        </Link>
-        <div style={styles.fileInfo}>
-          <span style={styles.fileName}>{fileName}</span>
-          <span style={styles.contentType}>{contentType}</span>
+    <div className="browse-shell">
+      <main className="browse-main" style={styles.main}>
+        {/* Header */}
+        <div
+          className="browse-enter"
+          style={{ ...styles.header, "--d": "40ms" } as React.CSSProperties}
+        >
+          <Link href={backHref(key)} className="preview-back" style={styles.back}>
+            ← Back
+          </Link>
+          <div style={styles.fileInfo}>
+            <span style={styles.fileName}>{fileName}</span>
+            <span style={styles.contentType}>{contentType}</span>
+          </div>
+          {!fetchError && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="download-pill"
+              style={styles.downloadBtn}
+            >
+              ⬇ Download
+            </a>
+          )}
+          <ThemeToggle />
         </div>
-        {!fetchError && (
-          <a href={url} target="_blank" rel="noreferrer" style={styles.downloadBtn}>
-            ⬇ Download
-          </a>
-        )}
-      </div>
 
-      <div style={styles.divider} />
+        <div style={styles.divider} />
 
-      {/* Preview area */}
-      {fetchError ? (
-        <div style={styles.errorBox}>
-          <p>⚠️ Could not generate a preview URL. Check your S3 credentials.</p>
+        {/* Preview area */}
+        <div
+          className="browse-enter"
+          style={{ "--d": "100ms" } as React.CSSProperties}
+        >
+          {fetchError ? (
+            <div style={styles.errorBox}>
+              <p>⚠️ Could not generate a preview URL. Check your S3 credentials.</p>
+            </div>
+          ) : isPdf ? (
+            <PdfPreview url={url} fileName={fileName} />
+          ) : isImage ? (
+            <ImagePreview url={url} fileName={fileName} />
+          ) : isJson ? (
+            <JsonPreview url={url} fileName={fileName} text={jsonText} />
+          ) : (
+            <div style={styles.unsupported}>
+              <p style={styles.unsupportedText}>
+                No preview available for <strong>.{ext}</strong> files.
+              </p>
+              <a
+                href={url}
+                download={fileName}
+                className="download-cta"
+                style={styles.bigDownload}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ⬇ Download {fileName}
+              </a>
+            </div>
+          )}
+
+          {isViewable && !fetchError && (
+            <p style={styles.expiry}>🔐 Preview link expires in 5 minutes.</p>
+          )}
         </div>
-      ) : isPdf ? (
-        <PdfPreview url={url} fileName={fileName} />
-      ) : isImage ? (
-        <ImagePreview url={url} fileName={fileName} />
-      ) : isJson ? (
-        <JsonPreview url={url} fileName={fileName} text={jsonText} />
-      ) : (
-        <div style={styles.unsupported}>
-          <p style={styles.unsupportedText}>
-            No preview available for <strong>.{ext}</strong> files.
-          </p>
-          <a href={url} download={fileName} style={styles.bigDownload} target="_blank" rel="noreferrer">
-            ⬇ Download {fileName}
-          </a>
-        </div>
-      )}
-
-      {isViewable && !fetchError && (
-        <p style={styles.expiry}>🔐 Preview link expires in 5 minutes.</p>
-      )}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -113,8 +138,8 @@ const styles: Record<string, React.CSSProperties> = {
   main: {
     maxWidth: 960,
     margin: "0 auto",
-    padding: "28px 16px",
-    fontFamily: "system-ui, sans-serif",
+    padding: "48px 16px 64px",
+    fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
   },
   header: {
     display: "flex",
@@ -124,11 +149,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
   back: {
-    fontSize: 14,
-    color: "#0070f3",
+    fontSize: 13,
+    color: "var(--muted)",
     textDecoration: "none",
     fontWeight: 600,
     whiteSpace: "nowrap",
+    fontFamily: "var(--font-geist-mono), monospace",
   },
   fileInfo: {
     display: "flex",
@@ -137,31 +163,38 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 0,
   },
   fileName: {
+    fontFamily: "var(--font-display), system-ui, sans-serif",
     fontWeight: 700,
-    fontSize: 16,
-    color: "#111",
+    fontSize: 20,
+    letterSpacing: "-0.01em",
+    color: "var(--foreground)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  contentType: { fontSize: 12, color: "#888" },
+  contentType: {
+    fontSize: 11,
+    color: "var(--muted)",
+    fontFamily: "var(--font-geist-mono), monospace",
+    letterSpacing: "0.04em",
+  },
   downloadBtn: {
     padding: "6px 14px",
     fontSize: 13,
     fontWeight: 600,
-    color: "#0070f3",
-    border: "1px solid #0070f3",
-    borderRadius: 6,
+    color: "var(--accent)",
+    border: "1px solid var(--accent)",
+    borderRadius: 8,
     textDecoration: "none",
     whiteSpace: "nowrap",
   },
-  divider: { borderBottom: "1px solid #eee", marginBottom: 20 },
+  divider: { borderBottom: "1px solid var(--border)", marginBottom: 20 },
   errorBox: {
     padding: 20,
-    background: "#fff3f3",
-    border: "1px solid #f5c6c6",
+    background: "var(--danger-surface)",
+    border: "1px solid var(--danger-border)",
     borderRadius: 8,
-    color: "#c00",
+    color: "var(--danger)",
     fontSize: 14,
   },
   unsupported: {
@@ -171,20 +204,21 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 20,
     paddingTop: 48,
   },
-  unsupportedText: { fontSize: 15, color: "#555" },
+  unsupportedText: { fontSize: 15, color: "var(--muted)" },
   bigDownload: {
     padding: "12px 28px",
     fontSize: 15,
     fontWeight: 600,
-    background: "#0070f3",
-    color: "#fff",
+    background: "var(--accent)",
+    color: "var(--accent-contrast)",
     borderRadius: 8,
     textDecoration: "none",
   },
   expiry: {
     marginTop: 16,
     fontSize: 12,
-    color: "#bbb",
+    color: "var(--muted)",
     textAlign: "center",
+    fontFamily: "var(--font-geist-mono), monospace",
   },
 };

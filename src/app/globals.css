@@ -14,7 +14,16 @@
   --accent-soft: rgba(13, 148, 136, 0.08);
   --danger: #d32f2f;
   --danger-surface: #fff3f3;
+  --danger-border: #f5c6c6;
+  --danger-contrast: #ffffff;
   --success: #1a7f4b;
+
+  /* Code / raw-text surface (JSON raw viewer) */
+  --code-bg: #f6f8fa;
+  --code-fg: #1f2328;
+
+  /* Scrim behind modals */
+  --overlay: rgba(0, 0, 0, 0.5);
 
   /* Elevation & motion */
   --shadow-card: 0 18px 50px -16px var(--accent-glow), 0 6px 24px rgba(0, 0, 0, 0.08);
@@ -25,28 +34,36 @@
   --grid-line: rgba(13, 148, 136, 0.06);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --surface: #0c0e0e;
-    --card: #16191a;
-    --border: #2e2e2e;
-    --muted: #999999;
+/* Dark theme — applied when the user (or the pre-paint script resolving "system")
+   sets data-theme="dark" on <html>. The script always sets a concrete light/dark
+   value, so System is handled in JS and no prefers-color-scheme block is needed. */
+:root[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --surface: #0c0e0e;
+  --card: #16191a;
+  --border: #2e2e2e;
+  --muted: #999999;
 
-    --accent: #2dd4bf;
-    --accent-hover: #5eead4;
-    --accent-contrast: #042f2e;
-    --accent-glow: rgba(45, 212, 191, 0.18);
-    --accent-soft: rgba(45, 212, 191, 0.1);
-    --danger: #ff6b6b;
-    --danger-surface: #2a1414;
-    --success: #4ade80;
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-contrast: #042f2e;
+  --accent-glow: rgba(45, 212, 191, 0.18);
+  --accent-soft: rgba(45, 212, 191, 0.1);
+  --danger: #ff6b6b;
+  --danger-surface: #2a1414;
+  --danger-border: #5a2a2a;
+  --danger-contrast: #2a0f0f;
+  --success: #4ade80;
 
-    --shadow-card: 0 18px 60px -16px rgba(0, 0, 0, 0.7),
-      0 0 0 1px rgba(45, 212, 191, 0.06);
-    --grid-line: rgba(45, 212, 191, 0.07);
-  }
+  --code-bg: #16191a;
+  --code-fg: #d4d4d4;
+
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --shadow-card: 0 18px 60px -16px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(45, 212, 191, 0.06);
+  --grid-line: rgba(45, 212, 191, 0.07);
 }
 
 html {
@@ -81,10 +98,12 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+/* Native form controls / scrollbars follow the explicit theme. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* ---------------------------------------------------------------------------
@@ -333,4 +352,70 @@ a {
   background: var(--danger-surface);
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------------
+   Preview screen — shares the browse "vault terminal" identity.
+   Reuses .browse-shell / .browse-enter for the glow + staggered reveal; these
+   classes style the back link, the outlined download pill, the big download
+   CTA, and inline download links inside the previewers.
+--------------------------------------------------------------------------- */
+.preview-back {
+  transition: color var(--transition), background var(--transition);
+}
+.preview-back:hover {
+  color: var(--accent);
+}
+
+/* Inline text links (download image / PDF / JSON) */
+.accent-link {
+  transition: color var(--transition);
+}
+.accent-link:hover {
+  color: var(--accent-hover);
+}
+
+/* Outlined accent pill (header download) */
+.download-pill {
+  transition: border-color var(--transition), background var(--transition),
+    color var(--transition);
+}
+.download-pill:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-hover);
+  color: var(--accent-hover);
+}
+
+/* Solid accent CTA (unsupported-file download) */
+.download-cta {
+  transition: background var(--transition), transform var(--transition);
+}
+.download-cta:hover {
+  background: var(--accent-hover);
+}
+.download-cta:active {
+  transform: translateY(1px);
+}
+
+/* JSON view-mode tabs */
+.json-tab {
+  transition: border-color var(--transition), background var(--transition),
+    color var(--transition);
+}
+.json-tab:hover:not(.json-tab-active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Theme toggle — segmented Light / Dark / System control */
+.theme-seg {
+  transition: color var(--transition), background var(--transition);
+}
+.theme-seg:hover:not(.theme-seg-active) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.theme-seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
