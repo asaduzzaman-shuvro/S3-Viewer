@@ -76,6 +76,12 @@ export default function LoginForm() {
             autoFocus
             required
             style={{ ...styles.input, "--d": "290ms" } as React.CSSProperties}
+            // Password-manager extensions (1Password, LastPass, Dashlane, …) rewrite
+            // this field's style attribute (e.g. caret-color, expanded longhands)
+            // before React hydrates, tripping a benign hydration-mismatch warning.
+            // Suppressing it ignores only this element's own attributes — same as the
+            // <body> flag in layout.tsx for Grammarly.
+            suppressHydrationWarning
           />
 
           {error && <p style={styles.error}>{error}</p>}
