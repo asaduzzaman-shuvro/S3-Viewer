@@ -10,6 +10,11 @@ inline — without exposing the bucket publicly.
 - **Folder browsing** — walk the bucket one level at a time, like a file explorer.
 - **Inline previews** — images, PDFs, JSON (via `react-json-view-lite`), and text
   render directly in the browser using short-lived presigned URLs.
+- **Theme picker** — Light, Dark, or System (follow OS) theme, saved per browser.
+  Change it anywhere in the app and it's reflected everywhere instantly.
+- **Bucket switching** — add, switch, edit, or remove S3 buckets at runtime via a
+  dropdown in the header; credentials are encrypted and never sent to the client.
+  Switching resets you to the new bucket's root to ensure a valid path.
 - **Presigned access** — files are served through 5-minute presigned GET URLs;
   bucket credentials never reach the client.
 - **Password gate** — one shared password protects every page and API route, with a
@@ -117,12 +122,25 @@ All scripts are defined in `package.json`:
   if it's missing or wrong. Repeated failed logins are rate-limited per client
   (in-memory lockout; `src/lib/rate-limit.ts`), and the cookie comparison is
   constant-time.
+- **Bucket connections.** The app stores saved S3 buckets in the local SQLite DB,
+  with each connection's secret access key encrypted under `APP_SECRET` (AES-256-GCM
+  with a random per-record scrypt salt). The active connection is resolved by
+  `src/lib/connection.ts` — a saved connection takes precedence, or the env-default,
+  or none. Users can add, switch, edit, and remove buckets at runtime via the
+  `BucketSwitcher` in the top-right. Switching to a new bucket navigates to its root
+  (`/browse`) to ensure a valid path — the bucket's folder structure may differ.
 - **Listing.** `listPrefix()` in `src/lib/s3.ts` runs a single
   `ListObjectsV2Command` with `Delimiter: "/"`, so `CommonPrefixes` become folders
   and `Contents` become files — a one-level-deep view of the bucket.
 - **Previewing.** `presignGet()` generates a 5-minute presigned GET URL with
   `ResponseContentType`/`ResponseContentDisposition` set so viewable types open
   inline and everything else downloads as an attachment.
+- **Theming.** The app supports Light, Dark, and System (follow OS) themes, with
+  the choice saved to `localStorage`. A pre-paint script in `layout.tsx` applies
+  the theme before the first paint to avoid flashing the wrong theme. The theme is
+  re-applied on every mount and on `pageshow` (back/forward cache) to ensure it's
+  always in sync across pages. The theme can be changed from a dropdown in the header
+  (`ThemeToggle`) and the choice persists across logins and sessions.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full request flow and
 [`docs/api-reference.md`](docs/api-reference.md) for the `src/lib/s3.ts` API.
@@ -145,6 +163,10 @@ See [`docs/architecture.md`](docs/architecture.md) for the full request flow and
 | `POST /api/logout`         | Clear the auth cookie |
 | `GET /api/list?prefix=`    | List folders & files at a prefix (JSON) |
 | `GET /api/signed-url?key=` | Return a presigned URL + content type for a key (JSON) |
+| `POST /api/connection`     | Add a new S3 bucket connection |
+| `PATCH /api/connection`    | Activate a saved connection by id |
+| `PUT /api/connection`      | Edit an existing connection (region, bucket, credentials) |
+| `DELETE /api/connection`   | Remove a saved connection |
 
 ## Project structure
 
@@ -160,7 +182,16 @@ src/
     browse/[[...path]]/     — Folder browser (server component, catch-all route)
     preview/[...key]/       — File preview page
     login/                  — Login page
-  components/               — Breadcrumb, FileRow, previews, LogoutButton, ConnectionForm, BucketSwitcher
+  components/
+    Breadcrumb.tsx          — Folder navigation trail
+    FileRow.tsx             — Single file/folder row in the listing
+    ImagePreview.tsx        — Inline image viewer
+    JsonPreview.tsx         — Inline JSON viewer with tree/raw modes
+    PdfPreview.tsx          — Inline PDF viewer
+    LogoutButton.tsx        — Sign-out button
+    ConnectionForm.tsx      — Form for entering S3 credentials
+    BucketSwitcher.tsx      — Dropdown to add/switch/edit/remove buckets
+    ThemeToggle.tsx         — Light/Dark/System theme picker
   lib/
     s3.ts                  — S3 client, listPrefix(), presignGet(), contentTypeFromKey()
     connection.ts          — Active-connection resolver (SQLite store or env default); encrypt()/decrypt()
@@ -189,5 +220,7 @@ prisma/
   keys nor access key IDs). Changing `APP_SECRET` makes existing saved secrets
   undecryptable; the browse page detects this and prompts you to re-enter the secret,
   which re-encrypts it under the new `APP_SECRET`.
+- The **theme preference** is stored in the browser's `localStorage` (no server
+  involvement) and visible in DevTools — it's not sensitive data, just a UI setting.
 - `listPrefix()` issues a single `ListObjectsV2Command` with no pagination, so a
   prefix with more than 1,000 immediate children will be truncated.

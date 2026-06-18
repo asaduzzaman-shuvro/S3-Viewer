@@ -1,13 +1,15 @@
-# API Reference — `src/lib/s3.ts`
+# API Reference
+
+## S3 Access Layer — `src/lib/s3.ts`
 
 The S3 access layer and the only place in the app that talks to AWS. It's
 **server-only** (uses the AWS SDK + Node crypto indirectly), so importing it from
 client components or Edge middleware will fail.
 
-As of the runtime-connection feature, this module no longer reads env vars or holds a
-singleton. Instead it builds a **per-connection** client (cached by credentials) and
-its functions take an `S3Connection` resolved by `src/lib/connection.ts` (the env default
-or a connection saved in the SQLite DB). See `docs/architecture.md` for the resolver.
+This module no longer reads env vars or holds a singleton. Instead it builds a
+**per-connection** client (cached by credentials) and its functions take an `S3Connection`
+resolved by `src/lib/connection.ts` (the env default or a connection saved in the SQLite DB).
+See `docs/architecture.md` for the connection resolver and bucket-switching behavior.
 
 ```ts
 import { listPrefix, presignGet, getObjectText, validateConnection, contentTypeFromKey } from "@/lib/s3";
@@ -214,3 +216,68 @@ contentTypeFromKey("data.parquet"); // "application/octet-stream"
 - `src/app/api/signed-url/route.ts` — calls `presignGet()` and `contentTypeFromKey()`.
 - `src/app/preview/[...key]/page.tsx` — presigns the object for inline preview, and uses `getObjectText()` to load JSON server-side.
 - `src/app/api/connection/route.ts` — calls `validateConnection()` before saving.
+
+---
+
+## Theme System — `src/components/ThemeToggle.tsx`
+
+The app supports three theme modes — Light, Dark, and System (follow OS preference) —
+via a dropdown in the header. The theme is **persistent per browser** (stored in
+`localStorage`) and **reflected globally** across all pages, even after logout/login.
+
+### Theme resolution
+
+- When the app loads, a pre-paint inline script in `src/app/layout.tsx` reads
+  `localStorage.getItem("theme")`. If the value is `"light"` or `"dark"`, that's the
+  theme; if it's `"system"` (or missing), the script resolves it via
+  `matchMedia("(prefers-color-scheme: dark)")` and sets a concrete `light` or `dark`.
+- The resolved theme is applied to `<html data-theme="light|dark">`.
+- `globals.css` contains all colors as CSS variables (e.g., `--accent`, `--background`)
+  with light and dark values, selected by the `data-theme` attribute.
+- The `ThemeToggle` component re-applies the theme on every mount and preference change,
+  ensuring client-side navigations stay in sync. It also listens to the `pageshow` event
+  (back/forward cache) to re-apply on bfcache restore.
+
+### API
+
+The theme preference is entirely client-side. To change it, click the theme picker in
+the header and select Light, Dark, or System. The choice is automatically saved to
+`localStorage` and applied instantly across the page.
+
+```ts
+// How ThemeToggle works internally:
+// 1. Read localStorage: pref = "light" | "dark" | "system"
+// 2. Resolve system: if pref === "system", check matchMedia; otherwise use pref as-is
+// 3. Apply: document.documentElement.dataset.theme = resolved
+// 4. Persist: localStorage.setItem("theme", pref)
+```
+
+---
+
+## Connection Management — `src/app/api/connection/route.ts`
+
+The app stores saved S3 buckets in the SQLite DB and allows users to add, switch, edit,
+and remove them at runtime via the `BucketSwitcher` dropdown in the header.
+
+### Endpoints
+
+- **`POST /api/connection`** — Add a new bucket. Body: `{ label, region, bucket, accessKeyId, secretAccessKey }`.
+  Validates the connection before saving; returns `400` if invalid.
+- **`PATCH /api/connection`** — Activate a bucket by id. Body: `{ id }`.
+  Switches the active connection and navigates to `/browse` (the bucket root).
+- **`PUT /api/connection`** — Edit an existing bucket. Body: `{ id, label?, region?, bucket?, accessKeyId?, secretAccessKey? }`.
+  All fields except `id` are optional; omit a field to keep the existing value. Navigates to root on save.
+- **`DELETE /api/connection`** — Remove a bucket by id. Body: `{ id }`.
+  Returns `400` if deleting the only connection; the user must add a new one first.
+
+### Security
+
+- Secret access keys are **AES-256-GCM encrypted** in the DB with a random per-record
+  salt and a key derived from `APP_SECRET`. If `APP_SECRET` changes, existing secrets
+  become undecryptable and the browse page prompts you to re-enter them.
+- Saved connections are never sent to the client as JSON. The bucket switcher receives
+  a sanitized list with no secret keys or access key IDs.
+- The connection resolver (`src/lib/connection.ts`) handles encryption/decryption and
+  is Node-only (never called in client code).
+
+---

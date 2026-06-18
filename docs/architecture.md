@@ -22,10 +22,11 @@ bucket connections, with each connection's secret access key encrypted under
 | **Node-only auth** | `src/lib/auth.server.ts` | `verifyPassword()` — constant-time `timingSafeEqual` check, used only by the login route. |
 | **S3 access layer** | `src/lib/s3.ts` | Per-connection `S3Client` (cached by credentials), `listPrefix(conn,…)`, `presignGet(conn,…)`, `validateConnection()`, `contentTypeFromKey()`. The only module that talks to AWS. |
 | **Connection resolver** | `src/lib/connection.ts` | Resolves the active `S3Connection` from the **SQLite DB** (a saved `Connection` row overrides the env default; `AppSettings` holds the active id + env hidden/override). Secret access key stored AES-256-GCM-encrypted with a random per-record scrypt salt (`secretEnc`); a decrypt failure (e.g. `APP_SECRET` changed) is surfaced by the browse page as a re-enter-secret prompt. Add/edit/activate/remove + a sanitized list for the client (no secret keys or access key IDs). |
+| **Theme system** | `src/app/layout.tsx`, `src/components/ThemeToggle.tsx` | Light/Dark/System theme picker. Preference stored in `localStorage`, resolved to a concrete `light` or `dark` value and set on `<html data-theme>`. Pre-paint script in `layout.tsx` applies the theme before first paint; re-applies on `pageshow` (back/forward cache) and on mount (client-side nav). CSS variables in `globals.css` adapt colors to the theme. |
 | **Database** | `src/lib/db.ts`, `prisma/` | Prisma + SQLite (`prisma/dev.db`). `db.ts` is the `PrismaClient` singleton (Node-only). Schema + migrations committed; the data file is gitignored. |
 | **API routes** | `src/app/api/*` | `login`, `logout`, `list`, `signed-url`, `connection` — JSON endpoints, each re-checking auth. |
 | **Pages** | `src/app/{login,browse,preview}` | Server components that render the UI. `browse` and `preview` read S3 directly server-side. `browse` shows a connection form when none is configured. |
-| **UI components** | `src/components/*` | `Breadcrumb`, `FileRow`, `ImagePreview`, `PdfPreview`, `JsonPreview`, `LogoutButton`, `ConnectionForm`, `BucketSwitcher`. |
+| **UI components** | `src/components/*` | `Breadcrumb`, `FileRow`, `ImagePreview`, `PdfPreview`, `JsonPreview`, `LogoutButton`, `ConnectionForm`, `BucketSwitcher`, `ThemeToggle`. |
 
 ## Data flow: a browse request
 
@@ -94,13 +95,29 @@ a time.
   expiry). `ResponseContentDisposition` is `inline` for viewable types and
   `attachment` for `application/octet-stream`, so PDFs and images open in-page
   while unknown types download.
+- **Bucket switching.** Clicking a different bucket in the `BucketSwitcher` dropdown
+  (top-right) calls `PATCH /api/connection { id }` to make that connection active,
+  then navigates to `/browse` (the root) with `router.push("/browse")` followed by
+  `router.refresh()`. This ensures the new bucket's root is fetched — a different
+  bucket may not have the nested path the user was previously on. The switcher shows
+  a loading spinner during the transition (via React's `useTransition()`). Adding a
+  new bucket or editing an existing one also resets to root on save.
+- **Theme persistence.** The `ThemeToggle` component in the header stores the user's
+  preference (`light`, `dark`, or `system`) to `localStorage`. A pre-paint script
+  in `layout.tsx` reads this on every load, resolves `system` to the OS setting via
+  `matchMedia("(prefers-color-scheme: dark)")`, and sets `<html data-theme>` to
+  `light` or `dark` before the page renders — avoiding any flash. The script also
+  listens to the `pageshow` event (back/forward cache) and re-applies the theme there.
+  The `ThemeToggle` component re-applies the resolved theme on every mount and preference
+  change (via a `useEffect`), so client-side navigations and soft routing always keep
+  the theme in sync. CSS variables in `globals.css` adapt colors between light and dark.
 - **`GET /api/list?prefix=`.** A JSON sibling of the browse page — same
   `listPrefix()` call, returned as JSON instead of HTML. Note the browse page does
   **not** use this endpoint; it calls `listPrefix()` directly server-side. The
   endpoint exists for programmatic/client use.
 - **Login / logout.** `POST /api/login` runs in the Node.js runtime (it needs
   `crypto.timingSafeEqual`), and on success sets `s3v_auth` to the one-way
-  `authToken()`. `POST /api/logout` clears only the auth cookie (`maxAge: 0`); the saved-connection store persists across logins.
+  `authToken()`. `POST /api/logout` clears only the auth cookie (`maxAge: 0`); the saved-connection store and theme preference persist across logins.
 
 ## Key decisions
 
@@ -130,6 +147,10 @@ a time.
 These are accurate to the code as read; flagged here so the docs don't paper over
 them:
 
+- **Bucket switching resets to root.** When you switch to a different bucket, the
+  app navigates to `/browse` (the root) rather than trying to preserve your path.
+  This is intentional — a different bucket rarely has the same folder structure, so
+  a nested path may not exist. Preserving context would be misleading.
 - **No pagination.** `listPrefix()` sends one `ListObjectsV2Command` and reads a
   single page of results. A prefix with more than ~1,000 immediate children will be
   silently truncated; handling `IsTruncated`/`ContinuationToken` would be needed.

@@ -20,10 +20,12 @@ src/
       login/route.ts      — POST /api/login — validates APP_PASSWORD, sets auth cookie
       logout/route.ts     — POST /api/logout — clears the auth cookie (saved connections persist)
       signed-url/route.ts — GET /api/signed-url?key= — returns a presigned S3 URL
-      connection/route.ts — POST/PATCH/DELETE — add/activate/remove a runtime S3 connection
+      connection/route.ts — POST/PUT/PATCH/DELETE — add/edit/activate/remove a runtime S3 connection
     browse/[[...path]]/   — Server component: folder browser (catch-all route)
     login/                — Login page
     preview/[...key]/     — File preview page (images, PDF, JSON, etc.)
+    layout.tsx            — Root layout; inline pre-paint script sets <html data-theme>
+    globals.css           — CSS variables (light + :root[data-theme="dark"]) drive themed colors
   components/
     Breadcrumb.tsx        — Navigation breadcrumb for current path
     FileRow.tsx           — Single row in the file/folder listing
@@ -32,13 +34,16 @@ src/
     LogoutButton.tsx      — Client component logout button
     PdfPreview.tsx        — Inline PDF viewer
     ConnectionForm.tsx    — Client form to enter/validate S3 bucket credentials
-    BucketSwitcher.tsx    — Top-right control to switch/add/remove S3 connections
+    BucketSwitcher.tsx    — Top-right control to switch/add/edit/remove S3 connections
+    RestoreDefaultButton.tsx — Re-activates the env-default bucket from the empty state
+    ThemeToggle.tsx       — Header dropdown: Light / Dark / System theme picker
   lib/
     s3.ts                 — Per-connection S3 client; listPrefix(), presignGet(), validateConnection(), contentTypeFromKey()
     connection.ts         — Resolves the active S3 connection (env default or the SQLite/Prisma store); encrypt()/decrypt()
     db.ts                 — PrismaClient singleton (Node-only; never import from middleware)
     auth.ts               — Cookie-based auth helpers (Edge-safe); isAuthed(), isAuthedRequest(), getAppSecret()
     auth.server.ts        — Node-only verifyPassword() (constant-time)
+    rate-limit.ts         — In-memory per-client login lockout
   proxy.ts                — Middleware: redirects unauthenticated requests to /login
 prisma/
   schema.prisma           — Connection + AppSettings models (committed)
@@ -116,3 +121,5 @@ SQLite path in `schema.prisma` (`file:./dev.db`), so no `DATABASE_URL` env var i
 - **Presigned URLs**: `presignGet(conn, key, expiresIn=300)` generates a 5-minute presigned GET URL. Content-Type and Content-Disposition are set so browsers render files inline.
 - **File routing**: Browse page at `/browse/[...path]`, preview at `/preview/[...key]`. Path segments are URL-encoded/decoded to handle spaces and special characters.
 - **Inline styles**: UI uses inline `React.CSSProperties` style objects — no CSS modules or Tailwind.
+- **Theming**: Light/Dark/System, stored in `localStorage` (key `theme`). A pre-paint inline script in `layout.tsx` resolves it (System → `matchMedia`) and sets `<html data-theme="light|dark">` before paint to avoid a flash; it re-applies on `pageshow` (bfcache), and `ThemeToggle` re-applies on every mount. **All themed colors are CSS variables in `globals.css` keyed off `data-theme` — never hardcode a color in a component** (it won't adapt to dark mode). `<html>` and the login password input carry `suppressHydrationWarning` (the script / password-manager extensions mutate them pre-hydration).
+- **Switching buckets resets to root**: any active-connection change (switch, add, edit, restore-default) navigates to `/browse` — a different bucket rarely shares the current nested path. See `goToRoot()` in `BucketSwitcher` and the `resetToRoot` prop on `ConnectionForm`.
