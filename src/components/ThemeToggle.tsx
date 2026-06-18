@@ -97,17 +97,21 @@ export default function ThemeToggle() {
   const pref = useThemePreference();
   const [open, setOpen] = useState(false);
 
-  // While following the OS, keep <html data-theme> in sync as the system theme flips.
+  // Keep <html data-theme> in sync with the stored preference on every mount and change.
+  // The pre-paint script sets it on a full load, but soft client-side navigations don't
+  // re-run that script — re-applying here guarantees the theme a user picked on one page
+  // is reflected on every other page. While following the OS, also track live changes.
   // Side-effect only (no setState), so it's lint-clean.
   useEffect(() => {
-    if (pref !== "system") return;
     const mq = window.matchMedia(DARK_QUERY);
-    const sync = () => {
-      document.documentElement.dataset.theme = mq.matches ? "dark" : "light";
+    const apply = () => {
+      document.documentElement.dataset.theme =
+        pref === "light" || pref === "dark" ? pref : mq.matches ? "dark" : "light";
     };
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+    apply();
+    if (pref !== "system") return;
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, [pref]);
 
   // Close the menu on Escape (click-away is handled by the backdrop).

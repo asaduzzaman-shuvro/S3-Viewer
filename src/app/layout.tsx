@@ -28,8 +28,10 @@ export const metadata: Metadata = {
 // Runs synchronously before first paint: resolves the stored theme preference
 // ("light" | "dark" | "system" | none) to a concrete light/dark value and sets it on
 // <html data-theme>, so the page renders in the right theme with no flash. "system"
-// (and the no-preference default) falls back to the OS setting.
-const themeInitScript = `(function(){try{var p=localStorage.getItem("theme");var d=(p==="light"||p==="dark")?p:(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=d;}catch(e){}})();`;
+// (and the no-preference default) falls back to the OS setting. Also re-applies on
+// bfcache restore (pageshow.persisted), where the page's DOM is restored as-is and this
+// script would otherwise not re-run — so a theme picked elsewhere is still honored.
+const themeInitScript = `(function(){try{var apply=function(){var p=localStorage.getItem("theme");document.documentElement.dataset.theme=(p==="light"||p==="dark")?p:(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");};apply();window.addEventListener("pageshow",function(e){if(e.persisted)apply();});}catch(e){}})();`;
 
 export default function RootLayout({
   children,
