@@ -14,6 +14,7 @@ import ConnectionForm from "@/components/ConnectionForm";
 import BucketSwitcher from "@/components/BucketSwitcher";
 import RestoreDefaultButton from "@/components/RestoreDefaultButton";
 import ThemeToggle from "@/components/ThemeToggle";
+import RefreshButton from "@/components/RefreshButton";
 
 interface BrowsePageProps {
   params: Promise<{ path?: string[] }>;
@@ -148,6 +149,7 @@ export default async function BrowsePage({ params }: BrowsePageProps) {
             </p>
           </div>
           <div style={styles.headerActions} className="browse-enter">
+            <RefreshButton prefix={prefix} />
             <BucketSwitcher connections={connections} restorableDefault={restorableDefault} />
             <ThemeToggle />
             <LogoutButton />

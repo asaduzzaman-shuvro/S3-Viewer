@@ -12,6 +12,7 @@ import {
 import type { AppSettings } from "@prisma/client";
 import { getAppSecret } from "./auth";
 import { prisma } from "./db";
+import { clearAll as clearListCache } from "./listCache";
 
 // Implicit, non-removable id for the connection built from environment variables.
 export const ENV_CONNECTION_ID = "env";
@@ -353,6 +354,9 @@ export async function updateConnection(
       create: { id: SETTINGS_ID, envOverrideJson },
       update: { envOverrideJson },
     });
+    // A re-pointed bucket keeps the same connection id, so listings cached under it
+    // could be stale — drop the listing cache.
+    clearListCache();
     return;
   }
 
@@ -370,6 +374,7 @@ export async function updateConnection(
         : {}),
     },
   });
+  clearListCache();
 }
 
 /**

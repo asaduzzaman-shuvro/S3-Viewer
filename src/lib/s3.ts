@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { S3Connection } from "./connection";
+import { getList, setList, clearList } from "./listCache";
 
 // ---------------------------------------------------------------------------
 // Per-connection S3 client (server-side only). The active connection's
@@ -86,6 +87,11 @@ export async function listPrefix(
 ): Promise<S3ListResult> {
   const normalisedPrefix = normalisePrefix(prefix);
 
+  // Serve from the short-TTL cache when warm; skips the S3 round trip on revisits.
+  const cacheKey = `${conn.id}:${normalisedPrefix}`;
+  const cached = getList(cacheKey);
+  if (cached) return cached;
+
   const command = new ListObjectsV2Command({
     Bucket: conn.bucket,
     Prefix: normalisedPrefix || undefined,
@@ -112,7 +118,14 @@ export async function listPrefix(
       .filter((f) => f.key) ?? []
   ).sort((a, b) => naturalCollator.compare(a.name, b.name));
 
-  return { folders, files };
+  const result: S3ListResult = { folders, files };
+  setList(cacheKey, result);
+  return result;
+}
+
+/** Drop the cached listing for a prefix so the next read fetches fresh from S3. */
+export function invalidateList(conn: S3Connection, prefix: string): void {
+  clearList(`${conn.id}:${normalisePrefix(prefix)}`);
 }
 
 // ---------------------------------------------------------------------------
