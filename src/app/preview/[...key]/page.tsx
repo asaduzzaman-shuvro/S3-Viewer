@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { isAuthed } from "@/lib/auth";
 import { getActiveConnection } from "@/lib/connection";
-import { presignGet, contentTypeFromKey, getObjectText } from "@/lib/s3";
+import { presignGet, contentTypeFromKey, getObjectText, listPrefix } from "@/lib/s3";
 import PdfPreview from "@/components/PdfPreview";
 import ImagePreview from "@/components/ImagePreview";
 import JsonPreview from "@/components/JsonPreview";
+import PreviewPager from "@/components/PreviewPager";
 import ThemeToggle from "@/components/ThemeToggle";
 
 interface PreviewPageProps {
@@ -16,6 +17,17 @@ const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
 function getExt(key: string): string {
   return key.split(".").pop()?.toLowerCase() ?? "";
+}
+
+/** A key is "viewable" if the preview page can render it inline (image / pdf / json). */
+function isViewableKey(key: string): boolean {
+  const ext = getExt(key);
+  return IMAGE_EXTS.includes(ext) || ext === "pdf" || ext === "json";
+}
+
+/** Build the preview href for a key — same encoding the browse listing uses. */
+function previewHref(key: string): string {
+  return "/preview/" + key.split("/").map(encodeURIComponent).join("/");
 }
 
 function backHref(key: string): string {
@@ -36,6 +48,31 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
   const fileName = key.split("/").pop() ?? key;
   const ext = getExt(key);
   const contentType = contentTypeFromKey(key);
+
+  // Neighbors: find the nearest viewable files before/after this one in the same
+  // folder so the pager can step through them (skipping non-viewable files). The
+  // sibling list is already natural-sorted by listPrefix, matching the browse order.
+  const parts = key.split("/");
+  const parentPrefix = parts.length > 1 ? parts.slice(0, -1).join("/") + "/" : "";
+  let prevHref: string | null = null;
+  let nextHref: string | null = null;
+  let position: { index: number; total: number } | null = null;
+  try {
+    const { files } = await listPrefix(conn, parentPrefix);
+    const idxFull = files.findIndex((f) => f.key === key);
+    const prev = [...files.slice(0, Math.max(idxFull, 0))]
+      .reverse()
+      .find((f) => isViewableKey(f.key));
+    const next =
+      idxFull >= 0 ? files.slice(idxFull + 1).find((f) => isViewableKey(f.key)) : undefined;
+    if (prev) prevHref = previewHref(prev.key);
+    if (next) nextHref = previewHref(next.key);
+    const viewable = files.filter((f) => isViewableKey(f.key));
+    const vi = viewable.findIndex((f) => f.key === key);
+    if (vi >= 0) position = { index: vi + 1, total: viewable.length };
+  } catch {
+    // Listing failed — leave the pager hidden rather than break the preview.
+  }
 
   let url = "";
   let fetchError = false;
@@ -91,6 +128,9 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
         </div>
 
         <div style={styles.divider} />
+
+        {/* Prev / Next pager over viewable siblings */}
+        <PreviewPager prevHref={prevHref} nextHref={nextHref} position={position} />
 
         {/* Preview area */}
         <div

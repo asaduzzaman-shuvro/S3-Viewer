@@ -208,6 +208,17 @@ a {
   }
 }
 
+/* Skeleton pulse for route loading fallbacks (loading.tsx). */
+@keyframes s3v-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
 /* Entrance choreography — card rises, contents stagger in.
    Each element sets its own --d delay inline. */
 @media (prefers-reduced-motion: no-preference) {

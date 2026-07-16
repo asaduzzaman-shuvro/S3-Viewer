@@ -86,13 +86,23 @@ export function hasEnvConnection(): boolean {
 const KEY_VERSION = "v2:";
 const LEGACY_SALT = "s3v-connection-store-v1";
 
-let legacyKeyCache: Buffer | null = null;
+// scrypt is deliberately CPU-expensive (~35ms/call) and synchronous, so it blocks
+// the event loop. The derived key is a pure function of (APP_SECRET, salt), and both
+// are stable for the life of the process — so cache by salt. This turns the
+// per-request cost (every navigation resolves the active connection, decrypting its
+// secret) into a one-time cost per distinct salt.
+const keyCache = new Map<string, Buffer>();
 function deriveKey(salt: Buffer | string): Buffer {
-  return scryptSync(getAppSecret(), salt, 32);
+  const cacheKey = typeof salt === "string" ? salt : salt.toString("base64");
+  let key = keyCache.get(cacheKey);
+  if (!key) {
+    key = scryptSync(getAppSecret(), salt, 32);
+    keyCache.set(cacheKey, key);
+  }
+  return key;
 }
 function legacyKey(): Buffer {
-  if (!legacyKeyCache) legacyKeyCache = deriveKey(LEGACY_SALT);
-  return legacyKeyCache;
+  return deriveKey(LEGACY_SALT);
 }
 
 export function encrypt(plaintext: string): string {

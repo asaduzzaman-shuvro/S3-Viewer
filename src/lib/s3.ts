@@ -49,6 +49,14 @@ export interface S3ListResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Natural, case-insensitive collator so numbered files sort as humans expect
+// (foo_1, foo_2, … foo_10, foo_11) instead of lexicographically (foo_1, foo_10,
+// foo_2). A shared instance is the efficient form of localeCompare(..., {numeric}).
+const naturalCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
 /** Normalise a prefix: no leading slash, trailing slash unless empty (root). */
 function normalisePrefix(prefix: string): string {
   let p = prefix.replace(/^\/+/, ""); // strip leading slashes
@@ -86,13 +94,14 @@ export async function listPrefix(
 
   const response = await clientFor(conn).send(command);
 
-  // CommonPrefixes → "folders"
-  const folders: string[] =
-    response.CommonPrefixes?.map((cp) => cp.Prefix ?? "").filter(Boolean) ??
-    [];
+  // CommonPrefixes → "folders". All entries share `normalisedPrefix`, so comparing
+  // the full prefix strings orders them by their differing tail segment.
+  const folders: string[] = (
+    response.CommonPrefixes?.map((cp) => cp.Prefix ?? "").filter(Boolean) ?? []
+  ).sort((a, b) => naturalCollator.compare(a, b));
 
   // Contents → files (exclude the placeholder object for the prefix itself)
-  const files: S3File[] =
+  const files: S3File[] = (
     response.Contents?.filter((obj) => obj.Key !== normalisedPrefix)
       .map((obj) => ({
         key: obj.Key ?? "",
@@ -100,7 +109,8 @@ export async function listPrefix(
         size: obj.Size ?? 0,
         lastModified: obj.LastModified ?? new Date(0),
       }))
-      .filter((f) => f.key) ?? [];
+      .filter((f) => f.key) ?? []
+  ).sort((a, b) => naturalCollator.compare(a.name, b.name));
 
   return { folders, files };
 }
