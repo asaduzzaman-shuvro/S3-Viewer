@@ -99,6 +99,27 @@ npm run dev      # start the dev server at http://localhost:3000
 Open the app, enter `APP_PASSWORD` at `/login`, and you'll be redirected to the
 bucket root at `/browse`.
 
+### Bucket CORS (for the local cache)
+
+The client-side preview cache reads object bytes with `fetch()`, so the bucket must
+allow this app's origin. Add a CORS configuration to the bucket (S3 console → the
+bucket → *Permissions* → *Cross-origin resource sharing (CORS)*):
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:3000", "https://your-app-domain"],
+    "AllowedMethods": ["GET"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["Content-Length", "Content-Type", "ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Replace `https://your-app-domain` with wherever you host the app. This is optional —
+without it, previews still work (loaded directly from S3), they just aren't cached.
+
 ## Scripts
 
 All scripts are defined in `package.json`:
@@ -135,6 +156,15 @@ All scripts are defined in `package.json`:
 - **Previewing.** `presignGet()` generates a 5-minute presigned GET URL with
   `ResponseContentType`/`ResponseContentDisposition` set so viewable types open
   inline and everything else downloads as an attachment.
+- **Local file cache.** Previewed images and PDFs are cached in the browser's
+  **IndexedDB** (`src/lib/blobCache.ts`, via the `useCachedObjectUrl` hook): the first
+  view fetches the bytes directly from S3 and stores the blob keyed by
+  `` `${connectionId}:${key}` ``; later views are served instantly from local disk with
+  no network. The cache is bounded to ~2 GB with LRU eviction and persists across
+  sessions. **This requires a CORS policy on the bucket** (so the browser can read the
+  bytes) — see [Bucket CORS](#bucket-cors-for-the-local-cache) below. Without it,
+  previews still load directly from S3 (just uncached), and a **Fetch from remote**
+  button forces a fresh copy.
 - **Theming.** The app supports Light, Dark, and System (follow OS) themes, with
   the choice saved to `localStorage`. A pre-paint script in `layout.tsx` applies
   the theme before the first paint to avoid flashing the wrong theme. The theme is

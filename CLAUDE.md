@@ -44,6 +44,8 @@ src/
     auth.ts               — Cookie-based auth helpers (Edge-safe); isAuthed(), isAuthedRequest(), getAppSecret()
     auth.server.ts        — Node-only verifyPassword() (constant-time)
     rate-limit.ts         — In-memory per-client login lockout
+    blobCache.ts          — Client-side IndexedDB blob cache (LRU, ~2GB) for previewed files
+    useCachedObjectUrl.ts — Client hook: serve preview bytes from cache, else fetch S3 + store
   proxy.ts                — Middleware: redirects unauthenticated requests to /login
 prisma/
   schema.prisma           — Connection + AppSettings models (committed)
@@ -119,6 +121,7 @@ SQLite path in `schema.prisma` (`file:./dev.db`), so no `DATABASE_URL` env var i
 
 - **S3 listing**: `listPrefix(conn, prefix)` uses `ListObjectsV2Command` with `Delimiter: "/"` for one-level-deep listing. Returns `{ folders: string[], files: S3File[] }`. Takes the active `S3Connection`.
 - **Presigned URLs**: `presignGet(conn, key, expiresIn=300)` generates a 5-minute presigned GET URL. Content-Type and Content-Disposition are set so browsers render files inline.
+- **Client-side preview cache**: images/PDFs are cached in the browser's **IndexedDB** (`lib/blobCache.ts`) via the `useCachedObjectUrl` hook (`lib/useCachedObjectUrl.ts`). Cache hit → served from a `blob:` URL (no network); miss → `fetch()` the presigned URL directly from S3, display, and store. Keyed by `` `${conn.id}:${key}` `` (stable — the presigned URL changes each visit; the conn.id prefix avoids cross-bucket collisions). Bounded to ~2 GB with LRU eviction, persists across sessions. **Requires a bucket CORS policy** (fetch reads bytes cross-origin); without it the hook falls back to loading the presigned URL directly (uncached). JSON is not cached (server-fetched via the `text` prop). `ImagePreview`/`PdfPreview` consume the hook and expose a **Fetch from remote** button (`refresh()` = evict + re-download).
 - **File routing**: Browse page at `/browse/[...path]`, preview at `/preview/[...key]`. Path segments are URL-encoded/decoded to handle spaces and special characters.
 - **Inline styles**: UI uses inline `React.CSSProperties` style objects — no CSS modules or Tailwind.
 - **Theming**: Light/Dark/System, stored in `localStorage` (key `theme`). A pre-paint inline script in `layout.tsx` resolves it (System → `matchMedia`) and sets `<html data-theme="light|dark">` before paint to avoid a flash; it re-applies on `pageshow` (bfcache), and `ThemeToggle` re-applies on every mount. **All themed colors are CSS variables in `globals.css` keyed off `data-theme` — never hardcode a color in a component** (it won't adapt to dark mode). `<html>` and the login password input carry `suppressHydrationWarning` (the script / password-manager extensions mutate them pre-hydration).

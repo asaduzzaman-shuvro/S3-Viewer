@@ -142,9 +142,9 @@ export default async function PreviewPage({ params }: PreviewPageProps) {
               <p>⚠️ Could not generate a preview URL. Check your S3 credentials.</p>
             </div>
           ) : isPdf ? (
-            <PdfPreview url={url} fileName={fileName} />
+            <PdfPreview url={url} fileName={fileName} cacheKey={`${conn.id}:${key}`} />
           ) : isImage ? (
-            <ImagePreview url={url} fileName={fileName} />
+            <ImagePreview url={url} fileName={fileName} cacheKey={`${conn.id}:${key}`} />
           ) : isJson ? (
             <JsonPreview url={url} fileName={fileName} text={jsonText} />
           ) : (
