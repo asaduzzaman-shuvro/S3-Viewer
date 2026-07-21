@@ -1,0 +1,21 @@
+node_modules
+.next
+.git
+.gitignore
+
+# Secrets and local data — never bake into the image
+.env*
+prisma/dev.db
+prisma/dev.db-journal
+
+# Docs / meta
+docs
+README.md
+CLAUDE.md
+*.md
+
+# Editor / OS cruft
+.vscode
+.idea
+.DS_Store
+npm-debug.log*

@@ -1,0 +1,18 @@
+name: Build and Deploy - Dev
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    uses: nhst/infra-common-github-actions/.github/workflows/node-workflow-template.yaml@dev
+    with:
+      node_version: "24.x"
+      image_name: CHANGE_ME_IMAGE_NAME       # TODO: e.g. s3-storage-viewer
+      ecr_repository: CHANGE_ME_ECR_REPO      # TODO: NHST ECR repository name
+      namespace: CHANGE_ME_NAMESPACE          # TODO: target k8s namespace
+      action_env: DEV
+      upload_dist: "no"
+      require_node_build: "no"                # the Docker image builds the app itself
+      multi_repo: true
+      package_manager: npm
+    secrets: inherit
