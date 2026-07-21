@@ -7,12 +7,12 @@ jobs:
     uses: nhst/infra-common-github-actions/.github/workflows/node-workflow-template.yaml@dev
     with:
       node_version: "24.x"
-      image_name: CHANGE_ME_IMAGE_NAME       # TODO: e.g. s3-storage-viewer
-      ecr_repository: CHANGE_ME_ECR_REPO      # TODO: NHST ECR repository name
-      namespace: CHANGE_ME_NAMESPACE          # TODO: target k8s namespace
+      image_name: s3-storage-viewer
+      ecr_repository: editorial
+      namespace: editorial
       action_env: DEV
       upload_dist: "no"
       require_node_build: "no"                # the Docker image builds the app itself
-      multi_repo: true
+      multi_repo: false
       package_manager: npm
     secrets: inherit
